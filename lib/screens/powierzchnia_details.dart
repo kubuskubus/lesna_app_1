@@ -6,8 +6,8 @@ import 'package:permission_handler/permission_handler.dart';
 
 
 import '../data_handler/data_handler.dart';
-import '../screens/powierzchnia_model.dart';
-import 'bluetooth_service.dart'; // Ensure this points to your BluetoothServiceManager file
+import 'powierzchnia_model.dart';
+import '../connector/bluetooth_service.dart'; // Ensure this points to your BluetoothServiceManager file
 
 class PowierzchniaDetailScreen extends StatefulWidget {
   const PowierzchniaDetailScreen({
@@ -26,6 +26,7 @@ class PowierzchniaDetailScreen extends StatefulWidget {
 class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
   // --- Data Handler for Saving ---
   final DataHandler _dataHandler = DataHandler();
+  bool _isBatchDialogOpen = false; // Add this line
 
   // --- Bluetooth State & UUIDs ---
   final List<String> _logs = [];
@@ -49,16 +50,31 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
 
   final List<String> _gatunki = ['SO', 'MD', 'ŚW', 'JD', 'BK'];
 
+
+  // ==========================================
+  // PUT initState() RIGHT HERE
+  // ==========================================
   @override
   void initState() {
     super.initState();
-    // Listen to global stream measurements from the Bluetooth service manager
-    _treeSubscription = BluetoothServiceManager().onTreeMeasured.listen((diameter) {
+    // Listen to global stream and pass incoming diameters to our handler function
+    _treeSubscription = BluetoothServiceManager().onTreeMeasured.listen(_handleIncomingBleMeasurement);
+  }
+
+  // ==========================================
+  // PUT YOUR NEW HANDLER RIGHT AFTER IT
+  // ==========================================
+  void _handleIncomingBleMeasurement(double diameter) {
+    if (_isBatchDialogOpen) {
+      // 1. DIALOG IS OPEN: Just push the value into the text box
+      _srednicaController.text = diameter.toStringAsFixed(1);
+      _log('-> Wypełniono pole średnicy z klupy: $diameter cm');
+    } else {
+      // 2. DIALOG IS CLOSED: Auto-add directly to the list
       final int nextIndex = widget.powierzchnia.drzewa.length + 1;
       final String generatedNumer = 'DRZ${nextIndex.toString().padLeft(3, '0')}';
 
       setState(() {
-        // Automatically add incoming BLE measurement as a tree!
         widget.powierzchnia.drzewa.add({
           'numer': generatedNumer,
           'gatunek': _selectedDrzewoGatunek,
@@ -66,9 +82,13 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
           'wysokosc': '',
         });
       });
-      widget.onUpdate(); // Save changes and refresh parent instantly
-    });
+
+      widget.onUpdate();
+      _log('-> Odebrano pomiar z klupy: $diameter cm. Zapisano jako $generatedNumer.');
+    }
   }
+
+
 
   @override
   void dispose() {
@@ -87,122 +107,6 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
     print(text);
   }
 
-  // --- PERMISSIONS ---
-  Future<void> _requestBluetoothPermissions() async {
-    await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.location,
-    ].request();
-  }
-
-  // --- BLUETOOTH SCAN & CONNECT ---
-  Future<void> _connectBluetooth() async {
-    try {
-      await _requestBluetoothPermissions();
-
-      setState(() => _isScanning = true);
-      _log('--> Skanowanie w poszukiwaniu urządzeń...');
-
-      if (await FlutterBluePlus.isSupported == false) {
-        _log('Błąd: Bluetooth nie jest wspierany na tym urządzeniu.');
-        setState(() => _isScanning = false);
-        return;
-      }
-
-      _showDeviceSelectionDialog();
-
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
-
-      Future.delayed(const Duration(seconds: 15), () {
-        if (_isScanning) {
-          FlutterBluePlus.stopScan();
-          setState(() => _isScanning = false);
-          _log('--> Skanowanie zakończone.');
-        }
-      });
-    } catch (e) {
-      _log('Błąd skanowania: $e');
-      setState(() => _isScanning = false);
-    }
-  }
-
-  void _showDeviceSelectionDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Wybierz urządzenie Klupa'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 300,
-            child: StreamBuilder<List<ScanResult>>(
-              stream: FlutterBluePlus.scanResults,
-              initialData: const [],
-              builder: (context, snapshot) {
-                final results = snapshot.data ?? [];
-                return results.isEmpty
-                    ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Szukanie urządzeń...'),
-                    ],
-                  ),
-                )
-                    : ListView.builder(
-                  itemCount: results.length,
-                  itemBuilder: (context, index) {
-                    final data = results[index];
-                    String name = data.device.platformName;
-                    if (name.isEmpty) name = data.advertisementData.localName;
-                    if (name.isEmpty) name = 'Nieznane urządzenie';
-
-                    return ListTile(
-                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(data.device.remoteId.toString()),
-                      trailing: ElevatedButton(
-                        child: const Text('Połącz'),
-                        onPressed: () async {
-                          Navigator.of(context).pop();
-                          await FlutterBluePlus.stopScan();
-                          _scanSubscription?.cancel();
-                          setState(() => _isScanning = false);
-
-                          await BluetoothServiceManager().connectToDevice(
-                            data.device,
-                            serviceUuid,
-                            rxUuid,
-                            txUuid,
-                            _log,
-                          );
-                          setState(() {});
-                        },
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                FlutterBluePlus.stopScan();
-                _scanSubscription?.cancel();
-                setState(() => _isScanning = false);
-                Navigator.of(context).pop();
-              },
-              child: const Text('Anuluj'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   // --- SIMULATOR FOR TESTING ---
   void _simulateMeasurement() {
@@ -418,11 +322,14 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
     );
   }
 
+  // building one drzewo card
   void _showBatchAddDrzewoDialog() {
     _srednicaController.clear();
     _wysokoscController.clear();
+
     setState(() {
       _selectedDrzewoGatunek = 'SO';
+      _isBatchDialogOpen = true; // Tell the app the dialog is now OPEN
     });
 
     showDialog(
@@ -437,86 +344,113 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: Text('Szybkie dodawanie ($generatedNumer)'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Gatunek', style: TextStyle(color: Colors.black54, fontSize: 12)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: _gatunki.map((gatunek) {
-                        final isSelected = _selectedDrzewoGatunek == gatunek;
-                        return ChoiceChip(
-                          label: Text(gatunek),
-                          selected: isSelected,
-                          selectedColor: Colors.deepPurple.shade100,
-                          onSelected: (selected) {
-                            setDialogState(() {
-                              _selectedDrzewoGatunek = gatunek;
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: _srednicaController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Średnica (cm) [opcjonalnie]',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _wysokoscController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Wysokość (m) [opcjonalnie]',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Zakończenie', style: TextStyle(color: Colors.red)),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    elevation: 0,
-                    backgroundColor: Colors.green.shade200,
-                    foregroundColor: Colors.black87,
-                  ),
-                  onPressed: () async {
-                    setState(() {
-                      widget.powierzchnia.drzewa.add({
-                        'numer': generatedNumer,
-                        'gatunek': _selectedDrzewoGatunek,
-                        'srednica': _srednicaController.text.trim(),
-                        'wysokosc': _wysokoscController.text.trim(),
-                      });
-                    });
-                    widget.onUpdate();
-
-                    _srednicaController.clear();
-                    _wysokoscController.clear();
-                    setDialogState(() {});
-                  },
-                  child: const Text('Dodaj kolejne'),
-                ),
-              ],
+              content: _buildBatchFormContent(setDialogState),
+              actions: _buildBatchDialogActions(generatedNumer, setDialogState),
             );
           },
         );
       },
+    ).then((_) {
+      // Tell the app the dialog is now CLOSED once popped
+      setState(() {
+        _isBatchDialogOpen = false;
+      });
+    });
+  }
+
+  // --- 1. FORM CONTENT ---
+  Widget _buildBatchFormContent(StateSetter setDialogState) {
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Gatunek', style: TextStyle(color: Colors.black54, fontSize: 12)),
+          const SizedBox(height: 8),
+          _buildSpeciesSelector(setDialogState),
+          const SizedBox(height: 20),
+          _buildMeasurementField(_srednicaController, 'Średnica (cm) [opcjonalnie]'),
+          const SizedBox(height: 16),
+          _buildMeasurementField(_wysokoscController, 'Wysokość (m) [opcjonalnie]'),
+        ],
+      ),
     );
   }
 
+  // --- 2. SPECIES CHIPS ---
+  Widget _buildSpeciesSelector(StateSetter setDialogState) {
+    return Wrap(
+      spacing: 8,
+      children: _gatunki.map((gatunek) {
+        final isSelected = _selectedDrzewoGatunek == gatunek;
+        return ChoiceChip(
+          label: Text(gatunek),
+          selected: isSelected,
+          selectedColor: Colors.deepPurple.shade100,
+          onSelected: (selected) {
+            setDialogState(() {
+              _selectedDrzewoGatunek = gatunek;
+            });
+          },
+        );
+      }).toList(),
+    );
+  }
+
+  // --- 3. REUSABLE TEXT FIELD ---
+  Widget _buildMeasurementField(TextEditingController controller, String label) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  // --- 4. ACTION BUTTONS ---
+  List<Widget> _buildBatchDialogActions(String generatedNumer, StateSetter setDialogState) {
+    return [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Zakończenie', style: TextStyle(color: Colors.red)),
+      ),
+      ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: Colors.green.shade200,
+          foregroundColor: Colors.black87,
+        ),
+        onPressed: () => _handleBatchAddNext(generatedNumer, setDialogState),
+        child: const Text('Dodaj kolejne'),
+      ),
+    ];
+  }
+
+  // --- 5. SAVE LOGIC ---
+  void _handleBatchAddNext(String generatedNumer, StateSetter setDialogState) {
+    setState(() {
+      widget.powierzchnia.drzewa.add({
+        'numer': generatedNumer,
+        'gatunek': _selectedDrzewoGatunek,
+        'srednica': _srednicaController.text.trim(),
+        'wysokosc': _wysokoscController.text.trim(),
+      });
+    });
+
+    // Save locally and refresh parent screen
+    widget.onUpdate();
+
+    // Clear inputs for the next tree
+    _srednicaController.clear();
+    _wysokoscController.clear();
+
+    // Force the dialog to rebuild with the new sequence number
+    setDialogState(() {});
+  }
+
+  // build powierzchnie screen
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -538,33 +472,17 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
   }
 
   AppBar _buildAppBar(BuildContext context) {
-    bool isConnected = BluetoothServiceManager().isConnected;
-
     return AppBar(
       leading: TextButton(
         onPressed: () => Navigator.pop(context),
-        child: const Text('Wstecz', style: TextStyle(color: Colors.deepPurple)),
+        child: const Text('Back', style: TextStyle(color: Colors.deepPurple)),
       ),
       leadingWidth: 70,
-      title: Text('Powierzchnia ${widget.powierzchnia.numer}'),
+      title: Text('Surface ${widget.powierzchnia.numer}'),
       actions: [
-        // BLE Connection Button & Simulator button shortcuts in AppBar
-        TextButton.icon(
-          onPressed: _isScanning ? null : _connectBluetooth,
-          icon: Icon(
-            Icons.bluetooth,
-            color: isConnected ? Colors.green : Colors.deepPurple,
-          ),
-          label: Text(
-            isConnected ? 'Połączono' : (_isScanning ? 'Skanowanie...' : 'BLE'),
-            style: TextStyle(
-              color: isConnected ? Colors.green.shade800 : Colors.deepPurple,
-            ),
-          ),
-        ),
         IconButton(
           icon: const Icon(Icons.science, color: Colors.amber),
-          tooltip: 'Symuluj pomiar klupy',
+          tooltip: 'Simulate caliper measurement',
           onPressed: _simulateMeasurement,
         ),
       ],
@@ -578,6 +496,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
     );
   }
 
+
+  //
   Widget _buildActionButtonsRow() {
     return Row(
       children: [

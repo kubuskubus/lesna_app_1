@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lesna_app_1/app_main_page.dart';
 // Import your connector screen file (adjust path if necessary based on your folder structure)
-import 'package:lesna_app_1/connector/connector.dart';
+import 'package:lesna_app_1/screens/powierzchnia_details.dart';
 
 void main() {
   runApp(const MyApp());

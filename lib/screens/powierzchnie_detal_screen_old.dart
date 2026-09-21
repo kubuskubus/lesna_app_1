@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../connector/connector.dart';
+import 'powierzchnia_details.dart';
 import 'powierzchnia_model.dart';
 import '../data_handler/data_handler.dart';
 

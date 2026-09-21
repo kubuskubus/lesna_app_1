@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+// Bluetooth Service Manager for managing Bluetooth connections - receiving stream
+
 class BluetoothServiceManager {
   // Singleton pattern so it's globally unique
   static final BluetoothServiceManager _instance = BluetoothServiceManager._internal();

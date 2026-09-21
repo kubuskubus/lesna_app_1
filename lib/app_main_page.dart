@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:lesna_app_1/screens/powierzchnia_model.dart';
 import 'connector/bluetooth_device.dart';
 import 'connector/bluetooth_service.dart';
-import 'connector/connector.dart';
+import 'screens/powierzchnia_details.dart';
 import '../data_handler/data_handler.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -79,108 +79,7 @@ class _PowierzchnieScreenState extends State<PowierzchnieScreen> {
     ].request();
   }
 
-  Future<void> _connectBluetooth() async {
-    try {
-      await _requestBluetoothPermissions();
 
-      setState(() => _isScanning = true);
-
-      if (await FlutterBluePlus.isSupported == false) {
-        setState(() => _isScanning = false);
-        return;
-      }
-
-      _showDeviceSelectionDialog();
-
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
-
-      Future.delayed(const Duration(seconds: 15), () {
-        if (_isScanning) {
-          FlutterBluePlus.stopScan();
-          setState(() => _isScanning = false);
-        }
-      });
-    } catch (e) {
-      setState(() => _isScanning = false);
-    }
-  }
-
-  void _showDeviceSelectionDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Wybierz urządzenie Klupa'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 300,
-            child: StreamBuilder<List<ScanResult>>(
-              stream: FlutterBluePlus.scanResults,
-              initialData: const [],
-              builder: (context, snapshot) {
-                final results = snapshot.data ?? [];
-                return results.isEmpty
-                    ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Szukanie urządzeń...'),
-                    ],
-                  ),
-                )
-                    : ListView.builder(
-                  itemCount: results.length,
-                  itemBuilder: (context, index) {
-                    final data = results[index];
-                    String name = data.device.platformName;
-                    if (name.isEmpty) name = data.advertisementData.localName;
-                    if (name.isEmpty) name = 'Nieznane urządzenie';
-
-                    return ListTile(
-                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(data.device.remoteId.toString()),
-                      trailing: ElevatedButton(
-                        child: const Text('Połącz'),
-                        onPressed: () async {
-                          Navigator.of(context).pop();
-                          await FlutterBluePlus.stopScan();
-                          _scanSubscription?.cancel();
-                          setState(() => _isScanning = false);
-
-                          await BluetoothServiceManager().connectToDevice(
-                            data.device,
-                            serviceUuid,
-                            rxUuid,
-                            txUuid,
-                                (msg) => print(msg),
-                          );
-                          setState(() {});
-                        },
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                FlutterBluePlus.stopScan();
-                _scanSubscription?.cancel();
-                setState(() => _isScanning = false);
-                Navigator.of(context).pop();
-              },
-              child: const Text('Anuluj'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   // --- 3. UI BUILD & LAYOUT METHODS ---
   @override
@@ -280,22 +179,30 @@ class _PowierzchnieScreenState extends State<PowierzchnieScreen> {
 
 // Inside your _PowierzchnieScreenState:
   Widget _buildBottomActionsRow() {
-    bool isConnected = BluetoothServiceManager().isConnected;
+    // Rely solely on BleConnector
+    bool isConnected = BleConnector.isConnected;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         FloatingActionButton.extended(
-          // CALL THE CONNECTOR HERE:
-          onPressed: isConnected ? null : () => BleConnector.connect(context),
+          onPressed: () async {
+            if (isConnected) {
+              await BleConnector.disconnect();
+              setState(() {}); // Odśwież UI po rozłączeniu
+            } else {
+              await BleConnector.connect(context);
+              setState(() {}); // Odśwież UI po połączeniu
+            }
+          },
           icon: Icon(
             Icons.bluetooth,
             color: isConnected ? Colors.green.shade800 : Colors.black87,
           ),
           label: Text(
-            isConnected ? 'Połączono' : 'Klupa (BLE)',
+            isConnected ? 'Rozłącz' : 'Klupa (BLE)',
           ),
-          backgroundColor: Colors.green[100],
+          backgroundColor: isConnected ? Colors.green[300] : Colors.green[100],
         ),
         const SizedBox(width: 12),
         FloatingActionButton(
