@@ -8,6 +8,8 @@ class BluetoothServiceManager {
   // Singleton pattern so it's globally unique
   static final BluetoothServiceManager _instance = BluetoothServiceManager._internal();
   factory BluetoothServiceManager() => _instance;
+  // 1. Add this buffer variable to store incoming fragments
+  String _messageBuffer = '';
   BluetoothServiceManager._internal();
 
   BluetoothDevice? connectedDevice;
@@ -23,6 +25,7 @@ class BluetoothServiceManager {
 
   String _streamBuffer = '';
 
+  // this is pushed from the Bluetooth Connector to establish connection with choosen device
   Future<void> connectToDevice(BluetoothDevice device, Guid serviceUuid, Guid rxUuid, Guid txUuid, Function(String) logger) async {
     try {
       connectedDevice = device;
@@ -43,9 +46,20 @@ class BluetoothServiceManager {
               await characteristic.setNotifyValue(true);
               await notifySubscription?.cancel();
 
-              notifySubscription = characteristic.onValueReceived.listen((value) {
+              notifySubscription = characteristic.onValueReceived.listen((value) async {
                 if (value.isNotEmpty) {
                   _processIncomingBytes(value, logger);
+
+                  // SEND THE ACKNOWLEDGMENT BYTE (0x06) TO THE TX CHANNEL
+                  if (uartTxCharacteristic != null) {
+                    try {
+                      // CHANGED: withoutResponse is now false
+                      await uartTxCharacteristic!.write([0x06], withoutResponse: false);
+                      logger('-> Sent ACK (0x06) to caliper');
+                    } catch (e) {
+                      logger('Failed to send ACK: $e');
+                    }
+                  }
                 }
               });
             }

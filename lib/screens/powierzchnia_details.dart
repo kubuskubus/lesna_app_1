@@ -31,6 +31,9 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
   // --- Bluetooth State & UUIDs ---
   final List<String> _logs = [];
   bool _isScanning = false;
+  bool _isMeasurementModeActive = false;
+  int _currentMeasurementIndex = -1;
+
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   StreamSubscription<double>? _treeSubscription;
 
@@ -65,10 +68,59 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
   // PUT YOUR NEW HANDLER RIGHT AFTER IT
   // ==========================================
   void _handleIncomingBleMeasurement(double diameter) {
-    if (_isBatchDialogOpen) {
+    if (_isMeasurementModeActive) {
+
+      // 1. Check if user hasn't tapped a tree yet
+      if (_currentMeasurementIndex == -1) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please tap a tree on the list first!'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      // 2. Normal sequence measurement
+      if (_currentMeasurementIndex >= 0 && _currentMeasurementIndex < widget.powierzchnia.drzewa.length) {
+        setState(() {
+          widget.powierzchnia.drzewa[_currentMeasurementIndex]['srednica'] = diameter.toStringAsFixed(1);
+        });
+
+        String treeNumber = widget.powierzchnia.drzewa[_currentMeasurementIndex]['numer'];
+
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$treeNumber | Diameter: ${diameter.toStringAsFixed(1)} cm'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+
+        widget.onUpdate();
+        _currentMeasurementIndex++;
+
+        // Deactivate if the end of the list is reached
+        if (_currentMeasurementIndex >= widget.powierzchnia.drzewa.length) {
+          setState(() {
+            _isMeasurementModeActive = false;
+            _currentMeasurementIndex = -1;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('All trees in the list have been measured.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } else if (_isBatchDialogOpen) {
+      // ... existing dialog logic ...
       // 1. DIALOG IS OPEN: Just push the value into the text box
       _srednicaController.text = diameter.toStringAsFixed(1);
-      _log('-> Wypełniono pole średnicy z klupy: $diameter cm');
+      _log('-> Filled diameter field: $diameter cm');
     } else {
       // 2. DIALOG IS CLOSED: Auto-add directly to the list
       final int nextIndex = widget.powierzchnia.drzewa.length + 1;
@@ -84,7 +136,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
       });
 
       widget.onUpdate();
-      _log('-> Odebrano pomiar z klupy: $diameter cm. Zapisano jako $generatedNumer.');
+      _log('-> Received diameter: $diameter cm. Saved as $generatedNumer.');
     }
   }
 
@@ -499,32 +551,85 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
 
   //
   Widget _buildActionButtonsRow() {
-    return Row(
-      children: [
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.grey.shade200,
-            foregroundColor: Colors.black87,
-            elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.grey.shade200,
+              foregroundColor: Colors.black87,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            ),
+            onPressed: _showBatchAddDrzewoDialog,
+            icon: const Icon(Icons.playlist_add, size: 18),
+            label: const Text('Add many'),
           ),
-          onPressed: _showBatchAddDrzewoDialog,
-          icon: const Icon(Icons.playlist_add, size: 18),
-          label: const Text('dodaj wiele'),
-        ),
-        const SizedBox(width: 12),
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green.shade100,
-            foregroundColor: Colors.black87,
-            elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade100,
+              foregroundColor: Colors.black87,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            ),
+            onPressed: _showAddDrzewoDialog,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Tree'),
           ),
-          onPressed: _showAddDrzewoDialog,
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text('drzewo'),
-        ),
-      ],
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _isMeasurementModeActive ? Colors.red.shade100 : Colors.blue.shade100,
+              foregroundColor: _isMeasurementModeActive ? Colors.red.shade900 : Colors.blue.shade900,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            ),
+            onPressed: () {
+              setState(() {
+                if (_isMeasurementModeActive) {
+                  // Deactivate
+                  _isMeasurementModeActive = false;
+                  _currentMeasurementIndex = -1;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Measurement mode stopped.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } else {
+                  // Activate, but wait for tap
+                  if (widget.powierzchnia.drzewa.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('List is empty. Add trees first.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+
+                  _isMeasurementModeActive = true;
+                  _currentMeasurementIndex = -1; // Set to -1 so no tree is highlighted yet
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Tap a tree on the list to select where to start.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              });
+            },
+            icon: Icon(
+              _isMeasurementModeActive ? Icons.stop : Icons.straighten,
+              size: 18,
+            ),
+            label: Text(_isMeasurementModeActive ? 'Stop' : 'Measurements'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -592,9 +697,39 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
     if (srednica.isNotEmpty) subtitleText += ' | Średnica: $srednica cm';
     if (wysokosc.isNotEmpty) subtitleText += ' | Wysokość: $wysokosc m';
 
+    // Check if this tree is the active target for the caliper
+    bool isActiveTree = _isMeasurementModeActive && _currentMeasurementIndex == index;
+
     return Card(
+      // Highlight the card background if active
+      color: isActiveTree ? Colors.blue.shade50 : null,
+      // Add a blue border if active
+      shape: isActiveTree
+          ? RoundedRectangleBorder(
+        side: const BorderSide(color: Colors.blue, width: 2),
+        borderRadius: BorderRadius.circular(12),
+      )
+          : null,
       child: ListTile(
-        onTap: () => _showEditDrzewoDialog(index, drzewo),
+        onTap: () {
+          // TAP: Start or move the measurement target to this tree
+          setState(() {
+            _isMeasurementModeActive = true;
+            _currentMeasurementIndex = index;
+          });
+
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Measurement mode started at $numer'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+        onLongPress: () {
+          // LONG PRESS: Open your existing edit dialog
+          _showEditDrzewoDialog(index, drzewo);
+        },
         title: Text(numer, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(subtitleText),
         trailing: IconButton(
@@ -602,6 +737,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
           onPressed: () async {
             setState(() {
               widget.powierzchnia.drzewa.removeAt(index);
+              // Optional safety: turn off measurement mode if the active tree is deleted
+              if (isActiveTree) _isMeasurementModeActive = false;
             });
             widget.onUpdate();
           },
