@@ -20,6 +20,8 @@ dependencies:
   # ADD THE LINE BELOW:
   flutter_blue_plus: ^1.32.10
   permission_handler: ^11.3.1 # <-- Add this
+  file_picker: ^13.1.0
+  archive: ^4.3.0
 
 dev_dependencies:
   flutter_test:

@@ -20,7 +20,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       // If you want to keep PowierzchnieScreen as your home:
-      home: const PowierzchnieScreen(),
+      home: const AppMainScreen(), // <--- Change this line
       // Alternatively, if you want to test the Bluetooth connector directly as the home screen, uncomment below:
       // home: const DigitechBrowserScreen(),
     );
