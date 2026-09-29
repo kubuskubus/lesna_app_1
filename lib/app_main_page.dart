@@ -164,7 +164,7 @@ class _AppMainScreenState extends State<AppMainScreen> {
           tooltip: 'Nadpisz plik JSON',
           onPressed: () async {
             // Pass the exact name of the file you want to overwrite in memory
-            bool success = await _dataHandler.mergeExternalFileIfExists('powierzchnie.json');
+            bool success = await _dataHandler.mergeOrInitExternalFile('powierzchnie.json');
             if (success) {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(

@@ -143,7 +143,7 @@ class DataHandler {
 
       final externalFile = File(result.path!);
 
-      // 2. If the internal file DOES NOT exist, simply copy the picked file and load it!
+      // 2. If the internal file DOES NOT exist, copy the picked file directly as the base
       if (!await targetFile.exists()) {
         await externalFile.copy(targetFile.path);
 
@@ -155,7 +155,7 @@ class DataHandler {
         return true;
       }
 
-      // 3. OTHERWISE, run your merge logic (since the internal file exists)
+      // 3. Parse External File (targeting the 'powierzchnie' key explicitly)
       final externalJsonString = await externalFile.readAsString();
       final dynamic externalDecoded = jsonDecode(externalJsonString);
 
@@ -163,11 +163,8 @@ class DataHandler {
       if (externalDecoded is List) {
         externalDataList = externalDecoded;
       } else if (externalDecoded is Map<String, dynamic>) {
-        for (var entry in externalDecoded.entries) {
-          if (entry.value is List) {
-            externalDataList = entry.value;
-            break;
-          }
+        if (externalDecoded.containsKey('powierzchnie') && externalDecoded['powierzchnie'] is List) {
+          externalDataList = externalDecoded['powierzchnie'];
         }
       }
 
@@ -175,7 +172,7 @@ class DataHandler {
           .map((json) => PowierzchniaModel.fromJson(json))
           .toList();
 
-      // Read and parse the internal JSON file
+      // 4. Parse Internal File (targeting the 'powierzchnie' key explicitly)
       final internalJsonString = await targetFile.readAsString();
       final dynamic internalDecoded = jsonDecode(internalJsonString);
 
@@ -183,11 +180,8 @@ class DataHandler {
       if (internalDecoded is List) {
         internalDataList = internalDecoded;
       } else if (internalDecoded is Map<String, dynamic>) {
-        for (var entry in internalDecoded.entries) {
-          if (entry.value is List) {
-            internalDataList = entry.value;
-            break;
-          }
+        if (internalDecoded.containsKey('powierzchnie') && internalDecoded['powierzchnie'] is List) {
+          internalDataList = internalDecoded['powierzchnie'];
         }
       }
 
@@ -197,12 +191,15 @@ class DataHandler {
 
       bool hasChanges = false;
 
-      // 4. Merge: Replace empty internal surfaces with filled external ones
+      // 5. Merge: Replace empty internal surfaces with filled external ones
       for (var extPow in externalPowierzchnie) {
         bool isExternalNotEmpty = extPow.drzewa.isNotEmpty;
 
         if (isExternalNotEmpty) {
-          int internalIndex = internalPowierzchnie.indexWhere((p) => p.numer == extPow.numer);
+          // Robust string and trimmed comparison to prevent -1 index mismatches
+          int internalIndex = internalPowierzchnie.indexWhere(
+                (p) => p.numer.toString().trim() == extPow.numer.toString().trim(),
+          );
 
           if (internalIndex >= 0) {
             bool isInternalEmpty = internalPowierzchnie[internalIndex].drzewa.isEmpty;
@@ -216,10 +213,16 @@ class DataHandler {
         }
       }
 
-      // 5. Save back if changes were made
+      // 6. Save back changes while preserving root JSON map structure if applicable
       if (hasChanges) {
-        final updatedJsonList = internalPowierzchnie.map((p) => p.toJson()).toList();
-        await targetFile.writeAsString(jsonEncode(updatedJsonList));
+        final updatedListJson = internalPowierzchnie.map((p) => p.toJson()).toList();
+
+        if (internalDecoded is Map<String, dynamic>) {
+          internalDecoded['powierzchnie'] = updatedListJson;
+          await targetFile.writeAsString(jsonEncode(internalDecoded));
+        } else {
+          await targetFile.writeAsString(jsonEncode(updatedListJson));
+        }
 
         if (targetFileName == 'powierzchnie.json') {
           await loadData();
