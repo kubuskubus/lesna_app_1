@@ -3,30 +3,33 @@
 class PowierzchniaModel {
   String numer;
   String adres;
-  Map<String, dynamic> wydz_data;
   List<DrzewoModel> drzewa;
+  List<Gatunek> gatunki;
 
   PowierzchniaModel({
     required this.numer,
     required this.adres,
-    required this.wydz_data,
     List<DrzewoModel>? drzewa,
-  }) : drzewa = drzewa ?? []; // Ensures the list is always growable
+    List<Gatunek>? gatunki,
+  })  : drzewa = drzewa ?? [],
+        gatunki = gatunki ?? [];
 
   factory PowierzchniaModel.fromJson(Map<String, dynamic> json) {
-    // Parse the single list of trees
     var drzewaFromJson = json['drzewa'] as List?;
     List<DrzewoModel> parsedDrzewa = drzewaFromJson != null
         ? drzewaFromJson.map((i) => DrzewoModel.fromJson(Map<String, dynamic>.from(i))).toList()
         : [];
 
+    var gatunkiFromJson = json['gatunki'] as List?;
+    List<Gatunek> parsedGatunki = gatunkiFromJson != null
+        ? gatunkiFromJson.map((i) => Gatunek.fromJson(Map<String, dynamic>.from(i))).toList()
+        : [];
+
     return PowierzchniaModel(
       numer: json['numer'] ?? '',
       adres: json['adres'] ?? '',
-      wydz_data: json['wydz_data'] != null
-          ? Map<String, dynamic>.from(json['wydz_data'])
-          : <String, dynamic>{},
       drzewa: parsedDrzewa,
+      gatunki: parsedGatunki,
     );
   }
 
@@ -34,9 +37,8 @@ class PowierzchniaModel {
     return {
       'numer': numer,
       'adres': adres,
-      'wydz_data': wydz_data,
-      // Convert the unified list back to JSON
       'drzewa': drzewa.map((d) => d.toJson()).toList(),
+      'gatunki': gatunki.map((g) => g.toJson()).toList(),
     };
   }
 }
@@ -90,6 +92,71 @@ class DrzewoModel {
       'odl': odl,
       'wiek': wiek, // Serialized to JSON
       'klasa_rozkladu': klasaRozkladu,
+    };
+  }
+}
+
+class Gatunek {
+  String nazwa;
+  int wiek;
+
+  Gatunek({
+    required this.nazwa,
+    this.wiek = 0,
+  });
+
+  factory Gatunek.fromJson(Map<String, dynamic> json) {
+    return Gatunek(
+      // Checking multiple keys just in case it's parsed directly from your raw JSON
+      nazwa: json['nazwa'] ?? json['name'] ?? json['gatunek'] ?? '',
+      wiek: int.tryParse(json['wiek']?.toString() ?? json['age']?.toString() ?? '0') ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'nazwa': nazwa,
+      'wiek': wiek,
+    };
+  }
+}
+
+class WydzielenieModel {
+  final String numPp;
+  final String adressLes;
+  final String numWydz;
+  final List<Gatunek> listOfTrees;
+
+  // Fields are marked as final because this model is strictly read-only
+  WydzielenieModel({
+    required this.numPp,
+    required this.adressLes,
+    required this.numWydz,
+    required this.listOfTrees,
+  });
+
+  factory WydzielenieModel.fromJson(Map<String, dynamic> json) {
+    // Parse the nested 'list_of_trees' directly into Gatunek objects
+    var treesFromJson = json['list_of_trees'] as List?;
+    List<Gatunek> parsedTrees = treesFromJson != null
+        ? treesFromJson.map((i) => Gatunek.fromJson(Map<String, dynamic>.from(i))).toList()
+        : [];
+
+    return WydzielenieModel(
+      // Safely parse everything to String to handle both int and String JSON formats
+      numPp: json['num_pp']?.toString() ?? '',
+      adressLes: json['adress_les']?.toString() ?? '',
+      numWydz: json['num_wydz']?.toString() ?? '',
+      listOfTrees: parsedTrees,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'num_pp': numPp,
+      'adress_les': adressLes,
+      'num_wydz': numWydz,
+      'list_of_trees': listOfTrees.map((t) => t.toJson()).toList(),
     };
   }
 }

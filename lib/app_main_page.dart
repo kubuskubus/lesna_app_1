@@ -18,7 +18,7 @@ class AppMainScreen extends StatefulWidget {
 class _AppMainScreenState extends State<AppMainScreen> {
   // --- 1. FIELDS & CONTROLLERS ---
 
-  List<PowierzchniaModel> _powierzchnie = [];
+  List<PowierzchniaModel> _powierzchnieList = [];
 
 
   bool _isLoading = false; // Set to false so it doesn't spin on startup
@@ -33,8 +33,9 @@ class _AppMainScreenState extends State<AppMainScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false; // Tracks if the user is currently typing
 
-  List<Map<String, dynamic>> _allNumPp = [];
-  List<Map<String, dynamic>> _filteredNumPp = [];
+// Change these at the top of _AppMainScreenState
+  List<WydzielenieModel> _allNumPp = [];
+  List<WydzielenieModel> _filteredNumPp = [];
 
   @override
   void dispose() {
@@ -50,17 +51,20 @@ class _AppMainScreenState extends State<AppMainScreen> {
   void initState() {
     super.initState();
     _loadJsonData();
+    _loadDataFromHandler(); // <-- Add this to load memory on startup
     // Removed _loadDataFromHandler() so it waits for the "Wczytaj" button
   }
 
   Future<void> _loadJsonData() async {
-    // Call the method you created in data_handler.dart
-    final loadedNums = await _dataHandler.loadNumPpFromJson();
+    if (_dataHandler.wydzList.isEmpty) {
+      await _dataHandler.loadData();
+    }
 
-    // Update the UI state once the data is loaded
     if (mounted) {
       setState(() {
-        _allNumPp = loadedNums;
+        // Assign directly, no Map conversion needed
+        _allNumPp = _dataHandler.wydzList;
+        _filteredNumPp = _allNumPp; // Initialize the filtered list
       });
     }
   }
@@ -72,22 +76,23 @@ class _AppMainScreenState extends State<AppMainScreen> {
     });
 
     try {
-      // 1. Load only the surfaces, which now automatically include all their nested trees
-      final loadedPowierzchnie = await _dataHandler.loadPowierzchnie();
+      // 1. Call the unified load method that reads both lists
+      await _dataHandler.loadData();
 
-      setState(() {
-        _powierzchnie = loadedPowierzchnie;
-
-        // You no longer need to set _drzewa or _drzewaMartwe here.
-        // Make sure to delete the List<DrzewoModel> _drzewa and _drzewaMartwe
-        // variable declarations from the top of your _AppMainScreenState class entirely!
-      });
+      if (mounted) {
+        setState(() {
+          // 2. Fetch the mutable list directly from the handler
+          _powierzchnieList = _dataHandler.powierzchnie;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      print('Error loading data in UI: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      debugPrint('Error loading data: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -96,14 +101,21 @@ class _AppMainScreenState extends State<AppMainScreen> {
   // Deletes a single item by its index
   Future<void> _deletePowierzchnia(int index) async {
     setState(() {
-      _powierzchnie.removeAt(index);
+      // 1. Remove the item directly from the DataHandler's master list
+      _dataHandler.powierzchnie.removeAt(index);
+
+      // 2. Sync your local UI list with the handler's list
+      _powierzchnieList = _dataHandler.powierzchnie;
     });
 
-    await _dataHandler.savePowierzchnie(_powierzchnie);
+    // 3. Call save with NO arguments
+    await _dataHandler.savePowierzchnie();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Usunięto powierzchnię.')),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Usunięto powierzchnię.')),
+      );
+    }
   }
 
 
@@ -141,47 +153,45 @@ class _AppMainScreenState extends State<AppMainScreen> {
     return AppBar(
       title: const Text('Powierzchnie próbne'),
       actions: [
-        // Import ZIP button using DataHandler directly
-        // IconButton(
-        //   icon: const Icon(Icons.folder_zip),
-        //   tooltip: 'Importuj ZIP',
-        //   onPressed: () async {
-        //     bool success = await _dataHandler.pickAndImportDatabase();
-        //     if (success) {
-        //       ScaffoldMessenger.of(context).showSnackBar(
-        //         const SnackBar(content: Text('Baza danych została pomyślnie zaimportowana!')),
-        //       );
-        //       _handleRefresh(); // Reloads the UI data
-        //     }
-        //   },
-        // ),
+        // NEW: Format Button
         IconButton(
-          icon: const Icon(Icons.data_object), // Using a JSON-appropriate icon
-          tooltip: 'Importuj JSON',
+          icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
+          tooltip: 'Formatuj pamięć',
+          onPressed: _showFormatDialog,
+        ),
+        IconButton(
+          icon: const Icon(Icons.data_object),
+          tooltip: 'Nadpisz plik JSON',
           onPressed: () async {
-            bool success = await _dataHandler.pickAndImportJson();
+            // Pass the exact name of the file you want to overwrite in memory
+            bool success = await _dataHandler.mergeExternalFileIfExists('powierzchnie.json');
             if (success) {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Plik JSON został pomyślnie zaimportowany!')),
+                  const SnackBar(content: Text('Plik JSON został pomyślnie nadpisany!')),
                 );
               }
-              _handleRefresh(); // Reloads the UI data
+              _handleRefresh(); // Reloads the UI data from the newly overwritten file
             }
           },
         ),
-
-        TextButton.icon(
-          onPressed: _handleRefresh,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Wczytaj'),
-        ),
-        // ... your export button ...
         TextButton(
-          onPressed: () {},
+          onPressed: () async {
+            bool success = await _dataHandler.exportPowierzchnieJson();
+
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(success
+                      ? 'Plik JSON został pomyślnie wyeksportowany!'
+                      : 'Anulowano eksport lub plik nie istnieje.'),
+                ),
+              );
+            }
+          },
           child: const Text(
-            'Eksport XML',
-            style: TextStyle(color: Colors.deepPurple),
+            'Eksport JSON',
+            style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold),
           ),
         ),
       ],
@@ -201,7 +211,7 @@ class _AppMainScreenState extends State<AppMainScreen> {
                 _isSearching = query.isNotEmpty;
                 if (_isSearching) {
                   _filteredNumPp = _allNumPp
-                      .where((item) => item['num_pp'].toString().startsWith(query))
+                      .where((item) => item.numPp.startsWith(query))
                       .toList();
                 }
               });
@@ -254,21 +264,41 @@ class _AppMainScreenState extends State<AppMainScreen> {
           child: ListTile(
             leading: const Icon(Icons.location_on_outlined),
             title: Text(
-              'num_pp: ${item['num_pp']}',
+              'num_pp: ${item.numPp}',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            trailing: IconButton(
-              icon: const Icon(Icons.add_circle_outline, color: Colors.deepPurple),
-              // 1. Trigger the dialog when the + icon is pressed
-              onPressed: () {
-                // If your dialog needs to know WHICH item was clicked, pass the item data:
-                // _showAddPowierzchniaDialog(item['num_pp']);
-                _showAddPowierzchniaDialog(item);
-              },
-            ),
-            // 2. Optional: Trigger the dialog if the user taps anywhere on the row
+            subtitle: Text('Adres leśny: ${item.adressLes}'),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
             onTap: () {
-              _showAddPowierzchniaDialog(item); // Passes the chosen surface number and its background data
+              // 1. Check if this surface is already active in your DataHandler
+              int existingIndex = _dataHandler.powierzchnie.indexWhere((p) => p.numer == item.numPp);
+
+              if (existingIndex >= 0) {
+                // Surface exists, load it and navigate
+                PowierzchniaModel currentPowierzchnia = _dataHandler.powierzchnie[existingIndex];
+
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PowierzchniaDetailScreen(
+                      powierzchnia: currentPowierzchnia,
+                      wydzData: item, // Pass the read-only reference data
+                      onUpdate: () async {
+                        setState(() {});
+                        await _dataHandler.savePowierzchnie();
+                      },
+                    ),
+                  ),
+                );
+              } else {
+                // Surface is not active, prompt the user to use the + button
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Powierzchnia ${item.numPp} nie została dodana. Użyj przycisku +, aby ją utworzyć.'),
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              }
             },
           ),
         );
@@ -278,7 +308,7 @@ class _AppMainScreenState extends State<AppMainScreen> {
 
 // Helper: Your original logic for existing powierzchnie
   Widget _buildPowierzchnieList() {
-    if (_powierzchnie.isEmpty) {
+    if (_powierzchnieList.isEmpty) {
       return const Center(
         child: Text(
           'Brak danych. Kliknij "Wczytaj" lub + aby dodać.',
@@ -288,9 +318,9 @@ class _AppMainScreenState extends State<AppMainScreen> {
     }
 
     return ListView.builder(
-      itemCount: _powierzchnie.length,
+      itemCount: _powierzchnieList.length,
       itemBuilder: (context, index) {
-        final item = _powierzchnie[index];
+        final item = _powierzchnieList[index];
         return _buildPowierzchniaItem(item, index);
       },
     );
@@ -314,15 +344,22 @@ class _AppMainScreenState extends State<AppMainScreen> {
           ],
         ),
         onTap: () {
+          // 1. Znajdź dopasowane dane "tylko do odczytu" w DataHandler
+          int wydzIndex = _dataHandler.wydzList.indexWhere((w) => w.numPp == item.numer);
+          WydzielenieModel? matchingWydz = wydzIndex >= 0
+              ? _dataHandler.wydzList[wydzIndex]
+              : null;
+
+          // 2. Przejdź do ekranu i przekaż oba modele
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => PowierzchniaDetailScreen(
-                powierzchnia: _powierzchnie[index], // This now contains its own list of trees
+                powierzchnia: _powierzchnieList[index],
+                wydzData: matchingWydz, // <-- Przekazanie danych tylko do odczytu
                 onUpdate: () async {
                   setState(() {});
-                  // Only one save call is needed now
-                  await _dataHandler.savePowierzchnie(_powierzchnie);
+                  await _dataHandler.savePowierzchnie();
                 },
               ),
             ),
@@ -357,22 +394,20 @@ class _AppMainScreenState extends State<AppMainScreen> {
           ),
           backgroundColor: isConnected ? Colors.green[300] : Colors.green[100],
         ),
-        const SizedBox(width: 12),
-        FloatingActionButton(
-          onPressed: _showAddPowierzchniaDialog,
-          child: const Icon(Icons.add),
-        ),
       ],
     );
   }
 
-  void _showAddPowierzchniaDialog([Map<String, dynamic>? selectedData]) {
-    // Pre-fill the controller if data was passed from the list
+  void _showEditPowierzchniaDialog(WydzielenieModel? item) {
+    // 1. Zmieniono 'selectedData' na 'item' oraz użyto notacji obiektowej (item.numPp)
     final TextEditingController numerController = TextEditingController(
-      text: selectedData != null ? selectedData['num_pp'].toString() : '',
+      text: item != null ? item.numPp : '',
     );
 
-    final TextEditingController adresController = TextEditingController();
+    // Dodatkowo: automatycznie pre-wypełnia adres leśny jeśli jest dostępny
+    final TextEditingController adresController = TextEditingController(
+      text: item != null ? item.adressLes : '',
+    );
 
     showDialog(
       context: context,
@@ -413,43 +448,38 @@ class _AppMainScreenState extends State<AppMainScreen> {
                   return;
                 }
 
-                // 1. Check if surface already exists in the loaded memory
-                int existingIndex = _powierzchnie.indexWhere((p) => p.numer == parsedNumer);
+                // Update state using the master list in DataHandler
+                int existingIndex = _dataHandler.powierzchnie.indexWhere((p) => p.numer == parsedNumer);
                 PowierzchniaModel currentPowierzchnia;
 
                 if (existingIndex >= 0) {
-                  // If it exists, use the existing one to avoid duplicates
-                  currentPowierzchnia = _powierzchnie[existingIndex];
+                  currentPowierzchnia = _dataHandler.powierzchnie[existingIndex];
                 } else {
-                  // If it is new, create the object, add to state, and save to internal file
+                  // 2. Usunięto argument wydz_data, ponieważ usunęliśmy go z PowierzchniaModel
                   currentPowierzchnia = PowierzchniaModel(
                     numer: parsedNumer,
                     adres: adresController.text.trim(),
-                    wydz_data: selectedData ?? <String, dynamic>{},
                   );
 
                   setState(() {
-                    _powierzchnie.add(currentPowierzchnia);
+                    _dataHandler.powierzchnie.add(currentPowierzchnia);
+                    _powierzchnieList = _dataHandler.powierzchnie; // Synchronizacja UI
                   });
 
-                  // Write the updated list to the internal file (powierzchnie.json)
-                  await _dataHandler.savePowierzchnie(_powierzchnie);
+                  await _dataHandler.savePowierzchnie();
                 }
 
-                // 2. Close the dialog
                 if (!context.mounted) return;
                 Navigator.of(context).pop();
 
-                // 3. Navigate to the detail screen
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => PowierzchniaDetailScreen(
                       powierzchnia: currentPowierzchnia,
-                      // The _drzewa and _drzewaMartwe parameters have been removed here
+                      wydzData: item, // 3. Przekazujemy dane 'tylko do odczytu' bezpośrednio do ekranu
                       onUpdate: () async {
                         setState(() {});
-                        // Save only Powierzchnie, which automatically saves all nested trees
-                        await _dataHandler.savePowierzchnie(_powierzchnie);
+                        await _dataHandler.savePowierzchnie(); // Zapis z pustymi nawiasami
                       },
                     ),
                   ),
@@ -458,6 +488,80 @@ class _AppMainScreenState extends State<AppMainScreen> {
               child: const Text('Dodaj'),
             )
           ],
+        );
+      },
+    );
+  }
+
+  // Deleting data from app
+  void _showFormatDialog() {
+    final TextEditingController pinController = TextEditingController();
+    bool isError = false;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text(
+                'Formatuj pamięć',
+                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('UWAGA! Ta operacja usunie wszystkie zapisane dane w pamięci aplikacji. Tej operacji nie można cofnąć.'),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: pinController,
+                    keyboardType: TextInputType.number,
+                    obscureText: true, // Hides the typed PIN
+                    decoration: InputDecoration(
+                      labelText: 'Wpisz PIN (123)',
+                      errorText: isError ? 'Nieprawidłowy PIN' : null,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Anuluj'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: () async {
+                    if (pinController.text.trim() == '123') {
+                      Navigator.of(context).pop(); // Close dialog immediately
+
+                      // Delete the files via DataHandler
+                      await _dataHandler.formatInternalMemory();
+
+                      // Clear the UI state completely
+                      setState(() {
+                        _powierzchnieList.clear();
+                        _allNumPp.clear();
+                        _filteredNumPp.clear();
+                      });
+
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Pamięć aplikacji została sformatowana.')),
+                        );
+                      }
+                    } else {
+                      // Show error state inside the dialog
+                      setDialogState(() => isError = true);
+                    }
+                  },
+                  child: const Text('Formatuj', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
         );
       },
     );

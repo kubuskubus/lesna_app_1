@@ -6,14 +6,17 @@ import 'powierzchnia_model.dart';
 import '../connector/bluetooth_service.dart';
 
 class PowierzchniaDetailScreen extends StatefulWidget {
+  final PowierzchniaModel powierzchnia;
+  final VoidCallback onUpdate;
+  final WydzielenieModel? wydzData; // <-- Dodane pole dla danych tylko do odczytu
+
   const PowierzchniaDetailScreen({
     super.key,
     required this.powierzchnia,
     required this.onUpdate,
+    this.wydzData,
   });
 
-  final PowierzchniaModel powierzchnia;
-  final VoidCallback onUpdate;
 
   @override
   State<PowierzchniaDetailScreen> createState() => _PowierzchniaDetailScreenState();
@@ -64,7 +67,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
     super.initState();
     _treeSubscription = BluetoothServiceManager().onTreeMeasured.listen(_handleIncomingBleMeasurement);
     placeholderFunction();
-
+    _syncGatunkiFromWydzData(); // Synchronizes and saves missing species on open
   }
 
   void _handleIncomingBleMeasurement(double diameter) {
@@ -155,55 +158,142 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
   }
 
 
+  void _syncGatunkiFromWydzData() {
+    if (widget.wydzData == null || widget.wydzData!.listOfTrees.isEmpty) return;
+
+    bool hasChanges = false;
+
+    for (var treeGatunek in widget.wydzData!.listOfTrees) {
+      String nazwa = treeGatunek.nazwa.trim().toUpperCase();
+      int wiek = treeGatunek.wiek;
+
+      if (nazwa.isNotEmpty) {
+        // Check if this species already exists in powierzchnia.gatunki
+        bool exists = widget.powierzchnia.gatunki.any(
+              (g) => g.nazwa.trim().toUpperCase() == nazwa,
+        );
+
+        // If it doesn't exist, add it
+        if (!exists) {
+          widget.powierzchnia.gatunki.add(Gatunek(nazwa: nazwa, wiek: wiek));
+          hasChanges = true;
+        }
+      }
+    }
+
+    // Save and refresh UI only if new species were actually added
+    if (hasChanges) {
+      setState(() {});
+      widget.onUpdate(); // Triggers the save function passed from the parent widget
+    }
+  }
+
+  void _showAddGatunekDialog(StateSetter setDialogState) {
+    final TextEditingController nazwaGatunkuController = TextEditingController();
+    final TextEditingController wiekGatunkuController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Nowy gatunek'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nazwaGatunkuController,
+                decoration: const InputDecoration(
+                  labelText: 'Nazwa (np. SO, BRZ)',
+                  border: OutlineInputBorder(),
+                ),
+                textCapitalization: TextCapitalization.characters, // Forces uppercase keyboard layout
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: wiekGatunkuController,
+                decoration: const InputDecoration(
+                  labelText: 'Wiek (lata)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Anuluj'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                // Automatically convert name to uppercase
+                final String novaNazwa = nazwaGatunkuController.text.trim().toUpperCase();
+                final int nowyWiek = int.tryParse(wiekGatunkuController.text.trim()) ?? 0;
+
+                if (novaNazwa.isNotEmpty) {
+                  // Check if this exact species + age combination already exists
+                  bool alreadyExists = widget.powierzchnia.gatunki.any(
+                        (g) => g.nazwa.trim().toUpperCase() == novaNazwa && g.wiek == nowyWiek,
+                  );
+
+                  if (!alreadyExists) {
+                    setState(() {
+                      widget.powierzchnia.gatunki.add(Gatunek(nazwa: novaNazwa, wiek: nowyWiek));
+                    });
+                    widget.onUpdate();
+                  }
+                }
+
+                Navigator.of(context).pop();
+                setDialogState(() {}); // Refresh dialog UI instantly
+              },
+              child: const Text('Dodaj'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
 
   void _showDrzewoDialog({
     required DialogMode mode,
     int? globalIndex,
     DrzewoModel? existingTree,
   }) {
-    List<dynamic> rawTreeList = widget.powierzchnia.wydz_data['list_of_trees'] ?? [];
+    // Determine the default species name fallback if needed
+    String defaultGatunek = 'SO';
 
-    // Helper function to dynamically look up age from the list_of_trees
-    int getAgeForSpecies(String requestedGatunek) {
-      if (rawTreeList.isEmpty) return 0;
-
-      for (var tree in rawTreeList) {
-        if (tree is Map<String, dynamic> || tree is Map) {
-          // Look for the species under a few possible keys and clean up the string
-          String treeSpecies = (tree['name'] ?? tree['Gatunek'] ?? tree['species'] ?? tree['gat'] ?? '')
-              .toString()
-              .trim()
-              .toUpperCase();
-
-          // Clean up the requested species string just in case
-          String requested = requestedGatunek.trim().toUpperCase();
-
-          if (treeSpecies == requested && tree['age'] != null) {
-            return int.tryParse(tree['age'].toString()) ?? 0;
-          }
-        }
-      }
-
-      return 0;
+    // 3. Initialize initial species and fields depending on mode (we'll use a temporary lookup or let StatefulBuilder handle it,
+    // but let's keep the initialization safe by reading widget.powierzchnia.gatunki directly here too)
+    List<Gatunek> initialGatunki = widget.powierzchnia.gatunki;
+    if (initialGatunki.isNotEmpty) {
+      defaultGatunek = initialGatunki.first.nazwa;
     }
 
-    // 1. Initialize initial species and fields depending on mode
+    int getInitialAge(String requestedGatunek) {
+      final match = widget.powierzchnia.gatunki.firstWhere(
+            (g) => g.nazwa.trim().toUpperCase() == requestedGatunek.trim().toUpperCase(),
+        orElse: () => Gatunek(nazwa: requestedGatunek, wiek: 0),
+      );
+      return match.wiek;
+    }
+
     if (mode == DialogMode.edit && existingTree != null) {
       _srednicaController.text = existingTree.srednica > 0 ? existingTree.srednica.toString() : '';
       _wysokoscController.text = existingTree.wysokosc > 0 ? existingTree.wysokosc.toString() : '';
       _azymutController.text = existingTree.azymut > 0 ? existingTree.azymut.toString() : '';
       _odlController.text = existingTree.odl > 0 ? existingTree.odl.toString() : '';
-      _wiekController.text = existingTree.wiek > 0 ? existingTree.wiek.toString() : getAgeForSpecies(existingTree.gatunek).toString();
+      _wiekController.text = existingTree.wiek > 0 ? existingTree.wiek.toString() : getInitialAge(existingTree.gatunek).toString();
       setState(() => _selectedDrzewoGatunek = existingTree.gatunek);
     } else {
       _srednicaController.clear();
       _wysokoscController.clear();
       _azymutController.clear();
       _odlController.clear();
-      setState(() => _selectedDrzewoGatunek = 'SO'); // Default species
+      setState(() => _selectedDrzewoGatunek = defaultGatunek);
 
-      // Set initial age for default species ('SO') by reading from list_of_trees
-      int initialAge = getAgeForSpecies('SO');
+      int initialAge = getInitialAge(defaultGatunek);
       _wiekController.text = initialAge > 0 ? initialAge.toString() : '';
     }
 
@@ -217,7 +307,38 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final int nextIndex = rawTreeList.length + 1;
+            // --- MOVED INSIDE SO IT RE-EVALUATES ON EVERY SET_DIALOG_STATE ---
+            List<Gatunek> dynamicGatunki = [];
+            if (widget.powierzchnia.gatunki.isNotEmpty) {
+              final seen = <String>{};
+              dynamicGatunki = widget.powierzchnia.gatunki.where((g) {
+                // Combine name and age so SO25 and SO45 are treated as distinct entries
+                final key = '${g.nazwa.trim().toUpperCase()}_${g.wiek}';
+                return seen.add(key);
+              }).toList();
+            }
+
+            if (dynamicGatunki.isEmpty) {
+              dynamicGatunki = [
+                Gatunek(nazwa: 'SO', wiek: 0),
+                Gatunek(nazwa: 'MD', wiek: 0),
+                Gatunek(nazwa: 'ŚW', wiek: 0),
+                Gatunek(nazwa: 'JD', wiek: 0),
+                Gatunek(nazwa: 'BK', wiek: 0),
+              ];
+            }
+
+            int getAgeForSpecies(String requestedGatunek) {
+              final match = dynamicGatunki.firstWhere(
+                    (g) => g.nazwa.trim().toUpperCase() == requestedGatunek.trim().toUpperCase(),
+                orElse: () => Gatunek(nazwa: requestedGatunek, wiek: 0),
+              );
+              return match.wiek;
+            }
+            // -----------------------------------------------------------------
+
+            // Count user-added trees to determine the next ID
+            final int nextIndex = widget.powierzchnia.drzewa.length + 1;
             String currentNumer = '';
             String title = '';
 
@@ -231,13 +352,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
                   : 'Nowe drzewo ($currentNumer)';
             }
 
-            void placeholderFunction() {
-              {}
-            }
-
-            // 3. Main object saving logic
+            // 4. Main object saving logic
             void handleSave(bool isBatchNext) {
-              // Create the Dart object for the UI
               final newTree = DrzewoModel(
                 powierzchniaNumer: widget.powierzchnia.numer,
                 gatunek: _selectedDrzewoGatunek,
@@ -250,20 +366,10 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
               );
 
               setState(() {
-                // Ensure JSON list is initialized
-                if (widget.powierzchnia.wydz_data['list_of_trees'] == null) {
-                  widget.powierzchnia.wydz_data['list_of_trees'] = <dynamic>[];
-                }
-                List jsonTreesList = widget.powierzchnia.wydz_data['list_of_trees'];
-
                 if (mode == DialogMode.edit && globalIndex != null) {
-                  // Update BOTH UI list and JSON map
                   widget.powierzchnia.drzewa[globalIndex] = newTree;
-                  jsonTreesList[globalIndex] = newTree.toJson();
                 } else {
-                  // Add to BOTH UI list and JSON map
                   widget.powierzchnia.drzewa.add(newTree);
-                  jsonTreesList.add(newTree.toJson());
                 }
               });
 
@@ -275,8 +381,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
                 _azymutController.clear();
                 _odlController.clear();
 
-                setState(() => _selectedDrzewoGatunek = 'SO');
-                int nextBatchAge = getAgeForSpecies('SO');
+                setState(() => _selectedDrzewoGatunek = dynamicGatunki.first.nazwa);
+                int nextBatchAge = getAgeForSpecies(dynamicGatunki.first.nazwa);
                 _wiekController.text = nextBatchAge > 0 ? nextBatchAge.toString() : '';
 
                 setDialogState(() {});
@@ -285,7 +391,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
               }
             }
 
-            // 4. Build Dialog UI
+            // 5. Build Dialog UI
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: Text(title),
@@ -298,22 +404,32 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
-                      children: _gatunki.map((gatunek) {
-                        return ChoiceChip(
-                          label: Text(gatunek),
-                          selected: _selectedDrzewoGatunek == gatunek,
-                          selectedColor: Colors.deepPurple.shade100,
-                          onSelected: (selected) {
-                            setDialogState(() {
-                              _selectedDrzewoGatunek = gatunek;
+                      runSpacing: 8,
+                      children: [
+                        ...dynamicGatunki.map((gatunekObj) {
+                          final String combinedLabel = '${gatunekObj.nazwa}${gatunekObj.wiek}';
 
-                              // AUTOMATICALLY UPDATE AGE WHEN SPECIES CHANGES:
-                              int suggestedAge = getAgeForSpecies(gatunek);
-                              _wiekController.text = suggestedAge > 0 ? suggestedAge.toString() : '';
-                            });
+                          return ChoiceChip(
+                            label: Text(combinedLabel),
+                            selected: _selectedDrzewoGatunek == gatunekObj.nazwa,
+                            selectedColor: Colors.deepPurple.shade100,
+                            onSelected: (selected) {
+                              setDialogState(() {
+                                _selectedDrzewoGatunek = gatunekObj.nazwa;
+                                _wiekController.text = gatunekObj.wiek > 0 ? gatunekObj.wiek.toString() : '';
+                              });
+                            },
+                          );
+                        }),
+                        ActionChip(
+                          avatar: const Icon(Icons.add, size: 16),
+                          label: const Text('Dodaj'),
+                          backgroundColor: Colors.grey.shade200,
+                          onPressed: () {
+                            _showAddGatunekDialog(setDialogState);
                           },
-                        );
-                      }).toList(),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 20),
                     TextField(
