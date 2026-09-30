@@ -24,7 +24,7 @@ class PowierzchniaDetailScreen extends StatefulWidget {
 
 enum DialogMode { addSingle, edit, addBatch }
 
-class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
+class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> with SingleTickerProviderStateMixin {
   // --- Data Handler for Saving ---
   final DataHandler _dataHandler = DataHandler();
   bool _isBatchDialogOpen = false;
@@ -58,16 +58,21 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
       .where((d) => d.typ == 'martwe')
       .toList();
 
-  void placeholderFunction() {
-    {} // Does nothing
-  }
+  // Add this variable
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    // Initialize the controller with 3 tabs
+    _tabController = TabController(length: 3, vsync: this);
     _treeSubscription = BluetoothServiceManager().onTreeMeasured.listen(_handleIncomingBleMeasurement);
     placeholderFunction();
     _syncGatunkiFromWydzData(); // Synchronizes and saves missing species on open
+  }
+
+  void placeholderFunction() {
+    {} // Does nothing
   }
 
   void _handleIncomingBleMeasurement(double diameter) {
@@ -145,8 +150,13 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
   void dispose() {
     _srednicaController.dispose();
     _wysokoscController.dispose();
+    _azymutController.dispose();
+    _odlController.dispose();
+    _wiekController.dispose();
     _scanSubscription?.cancel();
     _treeSubscription?.cancel();
+    // Add this line
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -523,93 +533,93 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
 
 
 
-  Widget _buildBatchFormContent(StateSetter setDialogState) {
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Gatunek', style: TextStyle(color: Colors.black54, fontSize: 12)),
-          const SizedBox(height: 8),
-          _buildSpeciesSelector(setDialogState),
-          const SizedBox(height: 20),
-          _buildMeasurementField(_srednicaController, 'Średnica (cm) [opcjonalnie]'),
-          const SizedBox(height: 16),
-          _buildMeasurementField(_wysokoscController, 'Wysokość (m) [opcjonalnie]'),
-        ],
-      ),
-    );
-  }
+  // Widget _buildBatchFormContent(StateSetter setDialogState) {
+  //   return SingleChildScrollView(
+  //     child: Column(
+  //       mainAxisSize: MainAxisSize.min,
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         const Text('Gatunek', style: TextStyle(color: Colors.black54, fontSize: 12)),
+  //         const SizedBox(height: 8),
+  //         _buildSpeciesSelector(setDialogState),
+  //         const SizedBox(height: 20),
+  //         _buildMeasurementField(_srednicaController, 'Średnica (cm) [opcjonalnie]'),
+  //         const SizedBox(height: 16),
+  //         _buildMeasurementField(_wysokoscController, 'Wysokość (m) [opcjonalnie]'),
+  //       ],
+  //     ),
+  //   );
+  // }
 
-  Widget _buildSpeciesSelector(StateSetter setDialogState) {
-    return Wrap(
-      spacing: 8,
-      children: _gatunki.map((gatunek) {
-        final isSelected = _selectedDrzewoGatunek == gatunek;
-        return ChoiceChip(
-          label: Text(gatunek),
-          selected: isSelected,
-          selectedColor: Colors.deepPurple.shade100,
-          onSelected: (selected) {
-            setDialogState(() {
-              _selectedDrzewoGatunek = gatunek;
-            });
-          },
-        );
-      }).toList(),
-    );
-  }
+  // Widget _buildSpeciesSelector(StateSetter setDialogState) {
+  //   return Wrap(
+  //     spacing: 8,
+  //     children: _gatunki.map((gatunek) {
+  //       final isSelected = _selectedDrzewoGatunek == gatunek;
+  //       return ChoiceChip(
+  //         label: Text(gatunek),
+  //         selected: isSelected,
+  //         selectedColor: Colors.deepPurple.shade100,
+  //         onSelected: (selected) {
+  //           setDialogState(() {
+  //             _selectedDrzewoGatunek = gatunek;
+  //           });
+  //         },
+  //       );
+  //     }).toList(),
+  //   );
+  // }
 
-  Widget _buildMeasurementField(TextEditingController controller, String label) {
-    return TextField(
-      controller: controller,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
-  }
-
-  List<Widget> _buildBatchDialogActions(String generatedNumer, StateSetter setDialogState) {
-    return [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Zakończenie', style: TextStyle(color: Colors.red)),
-      ),
-      ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          elevation: 0,
-          backgroundColor: Colors.green.shade200,
-          foregroundColor: Colors.black87,
-        ),
-        onPressed: () => _handleBatchAddNext(generatedNumer, setDialogState),
-        child: const Text('Dodaj kolejne'),
-      ),
-    ];
-  }
-
-  void _handleBatchAddNext(String generatedNumer, StateSetter setDialogState) {
-    setState(() {
-      // Zmienione z widget.drzewaList na widget.powierzchnia.drzewa
-      widget.powierzchnia.drzewa.add(
-        DrzewoModel(
-          powierzchniaNumer: widget.powierzchnia.numer,
-          gatunek: _selectedDrzewoGatunek,
-          typ: 'zywe', // Dodany typ dla żywego drzewa
-          srednica: double.tryParse(_srednicaController.text.trim()) ?? 0.0,
-          wysokosc: double.tryParse(_wysokoscController.text.trim()) ?? 0.0,
-        ),
-      );
-    });
-
-    widget.onUpdate();
-
-    _srednicaController.clear();
-    _wysokoscController.clear();
-
-    setDialogState(() {});
-  }
+  // Widget _buildMeasurementField(TextEditingController controller, String label) {
+  //   return TextField(
+  //     controller: controller,
+  //     keyboardType: TextInputType.number,
+  //     decoration: InputDecoration(
+  //       labelText: label,
+  //       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+  //     ),
+  //   );
+  // }
+  //
+  // List<Widget> _buildBatchDialogActions(String generatedNumer, StateSetter setDialogState) {
+  //   return [
+  //     TextButton(
+  //       onPressed: () => Navigator.pop(context),
+  //       child: const Text('Zakończenie', style: TextStyle(color: Colors.red)),
+  //     ),
+  //     ElevatedButton(
+  //       style: ElevatedButton.styleFrom(
+  //         elevation: 0,
+  //         backgroundColor: Colors.green.shade200,
+  //         foregroundColor: Colors.black87,
+  //       ),
+  //       onPressed: () => _handleBatchAddNext(generatedNumer, setDialogState),
+  //       child: const Text('Dodaj kolejne'),
+  //     ),
+  //   ];
+  // }
+  //
+  // void _handleBatchAddNext(String generatedNumer, StateSetter setDialogState) {
+  //   setState(() {
+  //     // Zmienione z widget.drzewaList na widget.powierzchnia.drzewa
+  //     widget.powierzchnia.drzewa.add(
+  //       DrzewoModel(
+  //         powierzchniaNumer: widget.powierzchnia.numer,
+  //         gatunek: _selectedDrzewoGatunek,
+  //         typ: 'zywe', // Dodany typ dla żywego drzewa
+  //         srednica: double.tryParse(_srednicaController.text.trim()) ?? 0.0,
+  //         wysokosc: double.tryParse(_wysokoscController.text.trim()) ?? 0.0,
+  //       ),
+  //     );
+  //   });
+  //
+  //   widget.onUpdate();
+  //
+  //   _srednicaController.clear();
+  //   _wysokoscController.clear();
+  //
+  //   setDialogState(() {});
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -732,49 +742,169 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> {
   }
 
   Widget _buildContentArea() {
-    final bool isEmpty = _currentDrzewa.isEmpty && _currentDrzewaMartwe.isEmpty;
-
     return Expanded(
-      child: isEmpty ? _buildEmptyState() : _buildDataList(),
+      child: Column(
+        children: [
+          TabBar(
+            controller: _tabController,
+            labelColor: Colors.deepPurple,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: Colors.deepPurple,
+            tabs: const [
+              Tab(text: 'Drzewa żyw.'),
+              Tab(text: 'Drzewa martw.'),
+              Tab(text: 'Kontrola'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // Tab 1: Drzewa żywe
+                _currentDrzewa.isEmpty
+                    ? _buildEmptyState('Brak żywych drzew. Kliknij "+ dodaj wiele" lub "+ drzewo".')
+                    : _buildDrzewaTabContent(),
+
+                // Tab 2: Drzewa martwe
+                _currentDrzewaMartwe.isEmpty
+                    ? _buildEmptyState('Brak martwych drzew.')
+                    : _buildMartweTabContent(),
+
+                // Tab 3: Kontrola
+                _buildEmptyState('Brak danych kontrolnych.'),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildEmptyState() {
-    return const Center(
+  Widget _buildEmptyState(String message) {
+    return Center(
       child: Text(
-        'Brak danych. Kliknij "+ dodaj wiele" lub "+ drzewo" aby dodać.',
-        style: TextStyle(color: Colors.grey),
+        message,
+        style: const TextStyle(color: Colors.grey),
         textAlign: TextAlign.center,
       ),
     );
   }
 
-  Widget _buildDataList() {
+  Widget _buildDrzewaTabContent() {
     return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       children: [
-        if (_currentDrzewa.isNotEmpty) ...[
-          _buildSectionHeader('Drzewa'),
-          ..._currentDrzewa.asMap().entries.map((entry) {
-            int localIndex = entry.key;
-            DrzewoModel drzewo = entry.value;
-            // Find the exact index in the unified list to allow editing/deleting
-            int globalIndex = widget.powierzchnia.drzewa.indexOf(drzewo);
-            return _buildDrzewoCard(drzewo, localIndex, globalIndex);
-          }),
-          const SizedBox(height: 16),
-        ],
-        if (_currentDrzewaMartwe.isNotEmpty) ...[
-          _buildSectionHeader('Drzewa Martwe'),
-          ..._currentDrzewaMartwe.asMap().entries.map((entry) {
-            int localIndex = entry.key;
-            // Use the unified DrzewoModel
-            DrzewoModel drzewoMartwe = entry.value;
-            // Find the exact index in the unified list
-            int globalIndex = widget.powierzchnia.drzewa.indexOf(drzewoMartwe);
-            return _buildDrzewoMartweCard(drzewoMartwe, localIndex, globalIndex);
-          }),
-        ],
+        _buildDrzewaTable(_currentDrzewa),
       ],
+    );
+  }
+
+  Widget _buildMartweTabContent() {
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      children: _currentDrzewaMartwe.asMap().entries.map((entry) {
+        int localIndex = entry.key;
+        DrzewoModel drzewoMartwe = entry.value;
+        int globalIndex = widget.powierzchnia.drzewa.indexOf(drzewoMartwe);
+        return _buildDrzewoMartweCard(drzewoMartwe, localIndex, globalIndex);
+      }).toList(),
+    );
+  }
+
+
+
+  Widget _buildDrzewaTable(List<DrzewoModel> drzewaList) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.white,
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                columnSpacing: 24, // Increase this value if you want the columns spread further apart
+                dataRowMinHeight: 40,
+                dataRowMaxHeight: 48,
+                columns: const [
+                  DataColumn(label: Text('Nr.', style: TextStyle(fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text('Gat.', style: TextStyle(fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text('Śred. [cm]', style: TextStyle(fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text('Wys. [m]', style: TextStyle(fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text('Akcje', style: TextStyle(fontWeight: FontWeight.bold))),
+                ],
+                rows: List.generate(drzewaList.length, (index) {
+                  final drzewo = drzewaList[index];
+                  final globalIndex = widget.powierzchnia.drzewa.indexOf(drzewo);
+
+                  // 1. Nr: Just the pure number
+                  final String numerStr = '${(globalIndex >= 0 ? globalIndex : index) + 1}';
+
+                  // 2. Gat: Species + Age (e.g., SO45)
+                  final String gatunekStr = '${drzewo.gatunek}${drzewo.wiek}';
+
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        Text(numerStr, style: const TextStyle(fontWeight: FontWeight.w500)),
+                        onTap: () {
+                          if (globalIndex >= 0) {
+                            _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                          }
+                        },
+                      ),
+                      DataCell(
+                        Text(gatunekStr),
+                        onTap: () {
+                          if (globalIndex >= 0) {
+                            _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                          }
+                        },
+                      ),
+                      DataCell(
+                        Text(drzewo.srednica > 0 ? drzewo.srednica.toStringAsFixed(1) : '-'),
+                        onTap: () {
+                          if (globalIndex >= 0) {
+                            _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                          }
+                        },
+                      ),
+                      DataCell(
+                        Text(drzewo.wysokosc > 0 ? drzewo.wysokosc.toStringAsFixed(1) : '-'),
+                        onTap: () {
+                          if (globalIndex >= 0) {
+                            _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                          }
+                        },
+                      ),
+                      DataCell(
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                          onPressed: () {
+                            if (globalIndex >= 0) {
+                              setState(() {
+                                widget.powierzchnia.drzewa.removeAt(globalIndex);
+                              });
+                              widget.onUpdate();
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
