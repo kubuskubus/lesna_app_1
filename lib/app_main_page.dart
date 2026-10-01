@@ -20,7 +20,8 @@ class _AppMainScreenState extends State<AppMainScreen> {
 
   List<PowierzchniaModel> _powierzchnieList = [];
 
-
+  PowierzchniaModel? _selectedPowierzchnia;
+  WydzielenieModel? _selectedWydzData;
   bool _isLoading = false; // Set to false so it doesn't spin on startup
   final TextEditingController _numerController = TextEditingController();
   final TextEditingController _adresController = TextEditingController();
@@ -33,7 +34,7 @@ class _AppMainScreenState extends State<AppMainScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false; // Tracks if the user is currently typing
 
-// Change these at the top of _AppMainScreenState
+  // Change these at the top of _AppMainScreenState
   List<WydzielenieModel> _allNumPp = [];
   List<WydzielenieModel> _filteredNumPp = [];
 
