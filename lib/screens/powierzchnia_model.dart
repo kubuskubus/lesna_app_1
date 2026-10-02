@@ -3,12 +3,14 @@
 class PowierzchniaModel {
   String numer;
   String adres;
+  String warstwa; // Added variable (stored as a string representation of an integer)
   List<DrzewoModel> drzewa;
   List<Gatunek> gatunki;
 
   PowierzchniaModel({
     required this.numer,
     required this.adres,
+    required this.warstwa, // Added to constructor
     List<DrzewoModel>? drzewa,
     List<Gatunek>? gatunki,
   })  : drzewa = drzewa ?? [],
@@ -28,6 +30,7 @@ class PowierzchniaModel {
     return PowierzchniaModel(
       numer: json['numer'] ?? '',
       adres: json['adres'] ?? '',
+      warstwa: json['warstwa']?.toString() ?? '', // Safely handles both String and int from JSON
       drzewa: parsedDrzewa,
       gatunki: parsedGatunki,
     );
@@ -37,6 +40,7 @@ class PowierzchniaModel {
     return {
       'numer': numer,
       'adres': adres,
+      'warstwa': warstwa, // Added to JSON export
       'drzewa': drzewa.map((d) => d.toJson()).toList(),
       'gatunki': gatunki.map((g) => g.toJson()).toList(),
     };
@@ -45,6 +49,7 @@ class PowierzchniaModel {
 
 
 class DrzewoModel {
+  final int numer; // Changed from 'number' to 'numer'
   String powierzchniaNumer;
   String gatunek;
   String typ;
@@ -52,10 +57,11 @@ class DrzewoModel {
   double wysokosc;
   double azymut;
   double odl;
-  int wiek;          // Added age field
+  int wiek;
   int klasaRozkladu;
 
   DrzewoModel({
+    required this.numer, // Changed from 'number' to 'numer'
     required this.powierzchniaNumer,
     required this.gatunek,
     required this.typ,
@@ -63,12 +69,13 @@ class DrzewoModel {
     this.wysokosc = 0.0,
     this.azymut = 0.0,
     this.odl = 0.0,
-    this.wiek = 0,   // Default value
+    this.wiek = 0,
     this.klasaRozkladu = 0,
   });
 
   factory DrzewoModel.fromJson(Map<String, dynamic> json) {
     return DrzewoModel(
+      numer: json['numer'] ?? 0,
       powierzchniaNumer: json['powierzchnia_numer'] ?? '',
       gatunek: json['gatunek'] ?? '',
       typ: json['typ'] ?? 'zywe',
@@ -76,13 +83,14 @@ class DrzewoModel {
       wysokosc: (json['wysokosc'] ?? 0.0).toDouble(),
       azymut: (json['azymut'] ?? 0.0).toDouble(),
       odl: (json['odl'] ?? 0.0).toDouble(),
-      wiek: json['wiek'] ?? 0, // Parsed from JSON
+      wiek: json['wiek'] ?? 0,
       klasaRozkladu: json['klasa_rozkladu'] ?? 0,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
+      'numer': numer,
       'powierzchnia_numer': powierzchniaNumer,
       'gatunek': gatunek,
       'typ': typ,
@@ -90,7 +98,7 @@ class DrzewoModel {
       'wysokosc': wysokosc,
       'azymut': azymut,
       'odl': odl,
-      'wiek': wiek, // Serialized to JSON
+      'wiek': wiek,
       'klasa_rozkladu': klasaRozkladu,
     };
   }

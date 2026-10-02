@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../data_handler/data_handler.dart';
+import 'kontrola_powierzchni.dart';
 import 'powierzchnia_model.dart';
 import '../connector/bluetooth_service.dart';
 
@@ -28,6 +31,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   // --- Data Handler for Saving ---
   final DataHandler _dataHandler = DataHandler();
   bool _isBatchDialogOpen = false;
+  bool _isDrzewoDialogOpen = false;
 
   // --- Bluetooth State & UUIDs ---
   final List<String> _logs = [];
@@ -46,6 +50,10 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   final TextEditingController _azymutController = TextEditingController();
   final TextEditingController _odlController = TextEditingController();
   final TextEditingController _wiekController = TextEditingController(); // Added
+  final TextEditingController _numerDrzewaController = TextEditingController();
+
+  // Add this near your TextEditingControllers
+  final FocusNode _srednicaFocusNode = FocusNode();
 
   final List<String> _gatunki = ['SO', 'MD', 'ŚW', 'JD', 'BK'];
 
@@ -83,6 +91,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     _wiekController.dispose();
     _scanSubscription?.cancel();
     _treeSubscription?.cancel();
+    _srednicaFocusNode.dispose(); // Don't forget to dispose!
     // Add this line
     _tabController.dispose();
     super.dispose();
@@ -93,14 +102,17 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     return Scaffold(
       appBar: _buildAppBar(context),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        // Changed to only() to keep sides at 16, but reduce the top gap
+        padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 16.0, top: 0.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildHeaderTitle(),
-            const SizedBox(height: 12),
-            _buildActionButtonsRow(),
-            const SizedBox(height: 20),
+            // _buildHeaderTitle(),
+            // const SizedBox(height: 12),
+            // _buildActionButtonsRow(),
+
+            // REMOVED: const SizedBox(height: 20), <-- This was causing the huge gap
+
             _buildContentArea(),
           ],
         ),
@@ -110,28 +122,38 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
   AppBar _buildAppBar(BuildContext context) {
     return AppBar(
-      leading: TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Back', style: TextStyle(color: Colors.deepPurple)),
-      ),
-      leadingWidth: 70,
-      title: Text('Surface ${widget.powierzchnia.numer}'),
-      // actions removed entirely since simulation is gone
+      title: Text('Powierzchnia nr. ${widget.powierzchnia.numer}'),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 16.0), // Adds a little breathing room on the right edge
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade100,
+              foregroundColor: Colors.black87,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            ),
+            onPressed: () => _showDrzewoDialog(mode: DialogMode.addSingle),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Drz.'),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildHeaderTitle() {
-    return const Text(
-      'Panel drzew i martwego drewna',
-      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-    );
-  }
+  // Widget _buildHeaderTitle() {
+  //   return const Text(
+  //     'Panel drzew i martwego drewna',
+  //     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+  //   );
+  // }
 
-  Widget _buildActionButtonsRow() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
+  // Widget _buildActionButtonsRow() {
+  //   return SingleChildScrollView(
+  //     scrollDirection: Axis.horizontal,
+  //     child: Row(
+  //       children: [
           // ElevatedButton.icon(
           //   style: ElevatedButton.styleFrom(
           //     backgroundColor: Colors.grey.shade200,
@@ -143,70 +165,70 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
           //   icon: const Icon(Icons.playlist_add, size: 18),
           //   label: const Text('Add many'),
           // ),
-          const SizedBox(width: 12),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade100,
-              foregroundColor: Colors.black87,
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            ),
-            onPressed: () => _showDrzewoDialog(mode: DialogMode.addSingle),
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Tree'),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _isMeasurementModeActive ? Colors.red.shade100 : Colors.blue.shade100,
-              foregroundColor: _isMeasurementModeActive ? Colors.red.shade900 : Colors.blue.shade900,
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            ),
-            onPressed: () {
-              setState(() {
-                if (_isMeasurementModeActive) {
-                  _isMeasurementModeActive = false;
-                  _currentMeasurementIndex = -1;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Measurement mode stopped.'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                } else {
-                  if (_currentDrzewa.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('List is empty. Add trees first.'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                    return;
-                  }
-
-                  _isMeasurementModeActive = true;
-                  _currentMeasurementIndex = -1;
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Tap a tree on the list to select where to start.'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-              });
-            },
-            icon: Icon(
-              _isMeasurementModeActive ? Icons.stop : Icons.straighten,
-              size: 18,
-            ),
-            label: Text(_isMeasurementModeActive ? 'Stop' : 'Measurements'),
-          ),
-        ],
-      ),
-    );
-  }
+          // const SizedBox(width: 12),
+          // ElevatedButton.icon(
+          //   style: ElevatedButton.styleFrom(
+          //     backgroundColor: Colors.green.shade100,
+          //     foregroundColor: Colors.black87,
+          //     elevation: 0,
+          //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          //   ),
+          //   onPressed: () => _showDrzewoDialog(mode: DialogMode.addSingle),
+          //   icon: const Icon(Icons.add, size: 18),
+          //   label: const Text('Tree'),
+          // ),
+          // const SizedBox(width: 12),
+          // ElevatedButton.icon(
+          //   style: ElevatedButton.styleFrom(
+          //     backgroundColor: _isMeasurementModeActive ? Colors.red.shade100 : Colors.blue.shade100,
+          //     foregroundColor: _isMeasurementModeActive ? Colors.red.shade900 : Colors.blue.shade900,
+          //     elevation: 0,
+          //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          //   ),
+          //   onPressed: () {
+          //     setState(() {
+          //       if (_isMeasurementModeActive) {
+          //         _isMeasurementModeActive = false;
+          //         _currentMeasurementIndex = -1;
+          //         ScaffoldMessenger.of(context).showSnackBar(
+          //           const SnackBar(
+          //             content: Text('Measurement mode stopped.'),
+          //             behavior: SnackBarBehavior.floating,
+          //           ),
+          //         );
+          //       } else {
+          //         if (_currentDrzewa.isEmpty) {
+          //           ScaffoldMessenger.of(context).showSnackBar(
+          //             const SnackBar(
+          //               content: Text('List is empty. Add trees first.'),
+          //               behavior: SnackBarBehavior.floating,
+          //             ),
+          //           );
+          //           return;
+          //         }
+          //
+          //         _isMeasurementModeActive = true;
+          //         _currentMeasurementIndex = -1;
+          //
+          //         ScaffoldMessenger.of(context).showSnackBar(
+          //           const SnackBar(
+          //             content: Text('Tap a tree on the list to select where to start.'),
+          //             behavior: SnackBarBehavior.floating,
+          //           ),
+          //         );
+          //       }
+          //     });
+          //   },
+          //   icon: Icon(
+          //     _isMeasurementModeActive ? Icons.stop : Icons.straighten,
+          //     size: 18,
+          //   ),
+          //   label: Text(_isMeasurementModeActive ? 'Stop' : 'Measurements'),
+          // ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
 
 
@@ -241,7 +263,9 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                     : _buildTreeTabContent(_currentDrzewaMartwe),
 
                 // Tab 3: Kontrola
-                _buildEmptyState('Brak danych kontrolnych.'),
+                SingleChildScrollView(
+                  child: KontrolaPowierzchni.buildKontrolaTable(_currentDrzewa),
+                ),
               ],
             ),
           ),
@@ -287,7 +311,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
               constraints: BoxConstraints(minWidth: constraints.maxWidth),
               child: DataTable(
                 headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-                columnSpacing: 24, // Increase this value if you want the columns spread further apart
+                columnSpacing: 24,
                 dataRowMinHeight: 40,
                 dataRowMaxHeight: 48,
                 columns: const [
@@ -301,8 +325,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                   final drzewo = drzewaList[index];
                   final globalIndex = widget.powierzchnia.drzewa.indexOf(drzewo);
 
-                  // 1. Nr: Just the pure number
-                  final String numerStr = '${(globalIndex >= 0 ? globalIndex : index) + 1}';
+                  // 1. Nr: Use the permanent number from the model, NOT the list index!
+                  final String numerStr = drzewo.numer.toString();
 
                   // 2. Gat: Species + Age (e.g., SO45)
                   final String gatunekStr = '${drzewo.gatunek}${drzewo.wiek}';
@@ -377,145 +401,189 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     int? globalIndex,
     DrzewoModel? existingTree,
   }) {
-    // 1. All the state clearing/setting happens here!
     _initializeDialogFields(mode, existingTree);
+    _isDrzewoDialogOpen = true;
+
+    DialogMode currentMode = mode;
+    int? currentGlobalIndex = globalIndex;
+
+    // --- NEW: Variable to hold the error text for the tree number
+    String? numerError;
+
+    // Generate integer number safely based on the highest existing number + 1
+    if (currentMode == DialogMode.edit && currentGlobalIndex != null) {
+      _numerDrzewaController.text = (currentGlobalIndex + 1).toString();
+    } else {
+      // Find the maximum 'numer' currently used, default to 0 if list is empty
+      int maxNumer = widget.powierzchnia.drzewa.isNotEmpty
+          ? widget.powierzchnia.drzewa.map((e) => e.numer).reduce((a, b) => a > b ? a : b)
+          : 0;
+
+      _numerDrzewaController.text = (maxNumer + 1).toString();
+    }
 
     showDialog(
       context: context,
-      barrierDismissible: mode != DialogMode.addBatch,
+      barrierDismissible: currentMode != DialogMode.addBatch,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-
             final List<Gatunek> dynamicGatunki = _getDynamicGatunki();
 
-            final int nextIndex = widget.powierzchnia.drzewa.length + 1;
-            String currentNumer = '';
-            String title = '';
-
-            // 2. Set the title based on mode
-            if (mode == DialogMode.edit && globalIndex != null) {
-              currentNumer = 'DRZ${(globalIndex + 1).toString().padLeft(3, '0')}';
-              title = 'Edytuj drzewo ($currentNumer)';
-            } else {
-              currentNumer = 'DRZ${nextIndex.toString().padLeft(3, '0')}';
-              title = mode == DialogMode.addBatch
-                  ? 'Szybkie dodawanie ($currentNumer)'
-                  : 'Nowe drzewo ($currentNumer)';
+            if ((_selectedDrzewoGatunek.isEmpty || !dynamicGatunki.any((g) => g.nazwa == _selectedDrzewoGatunek)) && dynamicGatunki.isNotEmpty) {
+              _selectedDrzewoGatunek = dynamicGatunki.first.nazwa;
+              _wiekController.text = dynamicGatunki.first.wiek > 0 ? dynamicGatunki.first.wiek.toString() : '';
             }
 
-            // 3. Return the dialog UI
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: Text(title),
+              title: Text(currentMode == DialogMode.edit ? 'Edycja drzewa' : 'Nowe drzewo'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // --- Stan drzewa (Żywe / Martwe) ---
-                    const Text('Stan drzewa', style: TextStyle(color: Colors.black54, fontSize: 12)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        ChoiceChip(
-                          label: const Text('Żywe'),
-                          selected: _selectedDrzewoTyp == 'zywe',
-                          selectedColor: Colors.green.shade100,
-                          onSelected: (selected) {
-                            if (selected) {
-                              setDialogState(() => _selectedDrzewoTyp = 'zywe');
-                            }
-                          },
-                        ),
-                        ChoiceChip(
-                          label: const Text('Martwe'),
-                          selected: _selectedDrzewoTyp == 'martwe',
-                          selectedColor: Colors.brown.shade100,
-                          onSelected: (selected) {
-                            if (selected) {
-                              setDialogState(() => _selectedDrzewoTyp = 'martwe');
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
 
-                    // ... the rest of your UI (Gatunek, Średnica, etc.) ...
-// ----------------------------------------
-                    const Text('Gatunek', style: TextStyle(color: Colors.black54, fontSize: 12)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        ...dynamicGatunki.map((gatunekObj) {
-                          final String combinedLabel = '${gatunekObj.nazwa}${gatunekObj.wiek}';
-
-                          return ChoiceChip(
-                            label: Text(combinedLabel),
-                            selected: _selectedDrzewoGatunek == gatunekObj.nazwa,
-                            selectedColor: Colors.deepPurple.shade100,
-                            onSelected: (selected) {
-                              setDialogState(() {
-                                _selectedDrzewoGatunek = gatunekObj.nazwa;
-                                _wiekController.text = gatunekObj.wiek > 0 ? gatunekObj.wiek.toString() : '';
-                              });
-                            },
-                          );
-                        }),
-                        ActionChip(
-                          avatar: const Icon(Icons.add, size: 16),
-                          label: const Text('Dodaj'),
-                          backgroundColor: Colors.grey.shade200,
-                          onPressed: () {
-                            _showAddGatunekDialog(setDialogState);
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
+                    // --- UPDATED: Numer Drzewa Field with Real-Time Validation
                     TextField(
-                      controller: _srednicaController,
+                      controller: _numerDrzewaController,
                       keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.next,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      onChanged: (val) {
+                        setDialogState(() {
+                          numerError = _checkNumerExists(val, currentMode, currentGlobalIndex);
+                        });
+                      },
                       decoration: InputDecoration(
-                        labelText: 'Średnica (cm) [opcjonalnie]',
+                        labelText: 'Numer drzewa',
+                        errorText: numerError,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 10),
+
+                    DropdownButtonFormField<String>(
+                      value: _selectedDrzewoTyp.isNotEmpty ? _selectedDrzewoTyp : 'zywe',
+                      decoration: InputDecoration(
+                        labelText: 'Stan drzewa',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'zywe', child: Text('Żywe')),
+                        DropdownMenuItem(value: 'martwe', child: Text('Martwe')),
+                      ],
+                      onChanged: (String? val) {
+                        if (val != null) {
+                          setDialogState(() => _selectedDrzewoTyp = val);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            isExpanded: true,
+                            value: _selectedDrzewoGatunek,
+                            decoration: InputDecoration(
+                              labelText: 'Gatunek',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            items: dynamicGatunki.map((gatunekObj) {
+                              final String combinedLabel = '${gatunekObj.nazwa}${gatunekObj.wiek}';
+                              return DropdownMenuItem<String>(
+                                value: gatunekObj.nazwa,
+                                child: Text(combinedLabel),
+                              );
+                            }).toList(),
+                            onChanged: (String? val) {
+                              if (val != null) {
+                                setDialogState(() {
+                                  _selectedDrzewoGatunek = val;
+                                  final selectedGatunekObj = dynamicGatunki.firstWhere((g) => g.nazwa == val);
+                                  _wiekController.text = selectedGatunekObj.wiek > 0
+                                      ? selectedGatunekObj.wiek.toString()
+                                      : '';
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade400),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.add, color: Colors.black87),
+                            tooltip: 'Dodaj nowy gatunek',
+                            onPressed: () {
+                              _showAddGatunekDialog(setDialogState);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    TextField(
+                      controller: _srednicaController,
+                      focusNode: _srednicaFocusNode,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.next,
+                      inputFormatters: [AutoDecimalFormatter(decimalDigits: 1)],
+                      decoration: InputDecoration(
+                        labelText: 'Średnica (cm)',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
                     TextField(
                       controller: _wysokoscController,
                       keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.next,
+                      inputFormatters: [AutoDecimalFormatter(decimalDigits: 1)],
                       decoration: InputDecoration(
-                        labelText: 'Wysokość (m) [opcjonalnie]',
+                        labelText: 'Wysokość (m)',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 10),
+
                     TextField(
                       controller: _azymutController,
                       keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.next,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: InputDecoration(
-                        labelText: 'Azymut (°) [opcjonalnie]',
+                        labelText: 'Azymut (°)',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 10),
+
                     TextField(
                       controller: _odlController,
                       keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.next,
+                      inputFormatters: [AutoDecimalFormatter(decimalDigits: 2)],
                       decoration: InputDecoration(
-                        labelText: 'Odległość (m) [opcjonalnie]',
+                        labelText: 'Odległość (m)',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 10),
+
                     TextField(
                       controller: _wiekController,
                       keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: InputDecoration(
                         labelText: 'Wiek (lata)',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -524,49 +592,43 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                   ],
                 ),
               ),
-              actions: mode == DialogMode.addBatch
-                  ? [
+              actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Zakończenie', style: TextStyle(color: Colors.red)),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    elevation: 0,
-                    backgroundColor: Colors.green.shade200,
-                    foregroundColor: Colors.black87,
-                  ),
-                  onPressed: () => _handleSaveTree(
-                    isBatchNext: true,
-                    mode: mode,
-                    globalIndex: globalIndex,
-                    dynamicGatunki: dynamicGatunki,
-                    setDialogState: setDialogState,
-                    dialogContext: context,
-                  ),
-                  child: const Text('Dodaj kolejne'),
-                ),
-              ]
-                  : [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Anuluj'),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    elevation: 0,
-                    backgroundColor: Colors.grey.shade300,
-                    foregroundColor: Colors.black87,
-                  ),
-                  onPressed: () => _handleSaveTree(
+                  // Disable button if there is an error
+                  onPressed: numerError != null ? null : () => _handleSaveTree(
                     isBatchNext: false,
-                    mode: mode,
-                    globalIndex: globalIndex,
+                    mode: currentMode,
+                    globalIndex: currentGlobalIndex,
                     dynamicGatunki: dynamicGatunki,
                     setDialogState: setDialogState,
                     dialogContext: context,
                   ),
-                  child: Text(mode == DialogMode.edit ? 'Zapisz' : 'Dodaj'),
+                  child: const Text('Koniec', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    elevation: 0,
+                    backgroundColor: numerError != null ? Colors.grey.shade300 : Colors.green.shade200,
+                    foregroundColor: Colors.black87,
+                  ),
+                  // Disable button if there is an error
+                  onPressed: numerError != null ? null : () {
+                    _handleSaveTree(
+                      isBatchNext: true,
+                      mode: currentMode,
+                      globalIndex: currentGlobalIndex,
+                      dynamicGatunki: dynamicGatunki,
+                      setDialogState: setDialogState,
+                      dialogContext: context,
+                    );
+                    setDialogState(() {
+                      currentMode = DialogMode.addBatch;
+                      currentGlobalIndex = null;
+                      // Clear any leftover errors when switching to next tree
+                      numerError = null;
+                    });
+                  },
+                  child: const Text('Następne'),
                 ),
               ],
             );
@@ -574,15 +636,31 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
         );
       },
     ).then((_) {
+      _isDrzewoDialogOpen = false;
       if (mode == DialogMode.addBatch) {
         setState(() => _isBatchDialogOpen = false);
       }
     });
   }
 
+  String? _checkNumerExists(String val, DialogMode currentMode, int? currentGlobalIndex) {
+    String inputtedNumer = val.trim();
+    for (int i = 0; i < widget.powierzchnia.drzewa.length; i++) {
+      // Skip checking the current tree if editing
+      if (currentMode == DialogMode.edit && i == currentGlobalIndex) continue;
+
+      String existingNumer = widget.powierzchnia.drzewa[i].numer.toString();
+      if (inputtedNumer == existingNumer) {
+        return 'Numer drzewa już zdefiniowano';
+      }
+    }
+    return null;
+  }
+
   void _showAddGatunekDialog(StateSetter setDialogState) {
     final TextEditingController nazwaGatunkuController = TextEditingController();
     final TextEditingController wiekGatunkuController = TextEditingController();
+
 
     showDialog(
       context: context,
@@ -697,20 +775,39 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
           );
         }
       }
-    } else if (_isBatchDialogOpen) {
+      // NEW LOGIC HERE: Check if the cursor is in the field OR if the batch dialog is open
+    } else if (_srednicaFocusNode.hasFocus || _isBatchDialogOpen) {
+      setState(() {
+        _srednicaController.text = diameter.toStringAsFixed(1);
+        // Move cursor to the end of the newly inserted text
+        _srednicaController.selection = TextSelection.fromPosition(
+          TextPosition(offset: _srednicaController.text.length),
+        );
+      });
+      _log('-> Filled diameter field: $diameter cm');
+// CHANGED LOGIC: Check if the dialog is open OR if the field has focus
+    } else if (_isDrzewoDialogOpen || _srednicaFocusNode.hasFocus) {
+      // No setState needed! The controller updates the UI automatically.
       _srednicaController.text = diameter.toStringAsFixed(1);
+
+      // Safely move the cursor to the end
+      _srednicaController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _srednicaController.text.length),
+      );
+
       _log('-> Filled diameter field: $diameter cm');
     } else {
+      // Default background adding logic (only runs if dialog is CLOSED)
       final int nextIndex = _currentDrzewa.length + 1;
       final String generatedNumer = 'DRZ${nextIndex.toString().padLeft(3, '0')}';
 
       setState(() {
-        // Zmienione z widget.drzewaList na widget.powierzchnia.drzewa
         widget.powierzchnia.drzewa.add(
           DrzewoModel(
+            numer: widget.powierzchnia.drzewa.length + 1, // <-- ADDED: Automatic next number
             powierzchniaNumer: widget.powierzchnia.numer,
             gatunek: _selectedDrzewoGatunek,
-            typ: 'zywe', // Dodany typ dla żywego drzewa
+            typ: 'zywe',
             srednica: diameter,
             wysokosc: 0.0,
           ),
@@ -845,49 +942,105 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   void _handleSaveTree({
     required bool isBatchNext,
     required DialogMode mode,
-    required int? globalIndex,
+    int? globalIndex,
     required List<Gatunek> dynamicGatunki,
-    required StateSetter setDialogState,
+    required void Function(void Function()) setDialogState,
     required BuildContext dialogContext,
   }) {
+    // 1. Safety check
+    if (_selectedDrzewoGatunek.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Wybierz gatunek przed zapisaniem!')),
+      );
+      return;
+    }
+
+    // 2. Validate Integer Number using our helper function
+    String inputtedNumer = _numerDrzewaController.text.trim();
+
+    // This checks if the number exists (respecting edit mode and globalIndex)
+    bool numberExists = _checkNumerExists(inputtedNumer, mode, globalIndex) != null;
+
+    if (numberExists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ten numer drzewa już istnieje! Wpisz inny.')),
+      );
+      return;
+    }
+
+    if (numberExists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ten numer drzewa już istnieje! Wpisz inny.')),
+      );
+      return;
+    }
+
+    // 3. Form new tree
     final newTree = DrzewoModel(
+      numer: int.tryParse(_numerDrzewaController.text) ?? 0, // <-- ADD THIS
       powierzchniaNumer: widget.powierzchnia.numer,
       gatunek: _selectedDrzewoGatunek,
-      typ: _selectedDrzewoTyp, // <-- CHANGE THIS LINE
-      srednica: double.tryParse(_srednicaController.text.trim()) ?? 0.0,
-      // ...
-      wysokosc: double.tryParse(_wysokoscController.text.trim()) ?? 0.0,
-      azymut: double.tryParse(_azymutController.text.trim()) ?? 0.0,
-      odl: double.tryParse(_odlController.text.trim()) ?? 0.0,
-      wiek: int.tryParse(_wiekController.text.trim()) ?? _getAgeForSpecies(_selectedDrzewoGatunek, dynamicGatunki),
+      typ: _selectedDrzewoTyp,
+      srednica: double.tryParse(_srednicaController.text.replaceAll(',', '.')) ?? 0.0,
+      wysokosc: double.tryParse(_wysokoscController.text.replaceAll(',', '.')) ?? 0.0,
+      azymut: double.tryParse(_azymutController.text.replaceAll(',', '.')) ?? 0.0,
+      odl: double.tryParse(_odlController.text.replaceAll(',', '.')) ?? 0.0,
+      wiek: int.tryParse(_wiekController.text) ?? 0,
     );
 
+    // 4. Save to the list and SORT automatically by tree number
     setState(() {
       if (mode == DialogMode.edit && globalIndex != null) {
         widget.powierzchnia.drzewa[globalIndex] = newTree;
       } else {
         widget.powierzchnia.drzewa.add(newTree);
       }
+
+      // --- NEW: Sort trees numerically from lowest to highest ---
+      widget.powierzchnia.drzewa.sort((a, b) => a.numer.compareTo(b.numer));
     });
 
     widget.onUpdate();
 
+    // 5. Next Tree logic
     if (isBatchNext) {
-      _srednicaController.clear();
-      _wysokoscController.clear();
-      _azymutController.clear();
-      _odlController.clear();
+      setDialogState(() {
+        _srednicaController.clear();
+        _wysokoscController.clear();
+        _azymutController.clear();
+        _odlController.clear();
 
-      setState(() => _selectedDrzewoGatunek = dynamicGatunki.first.nazwa);
-      int nextBatchAge = _getAgeForSpecies(dynamicGatunki.first.nazwa, dynamicGatunki);
-      _wiekController.text = nextBatchAge > 0 ? nextBatchAge.toString() : '';
-
-      setDialogState(() {});
+        // --- Generate next integer for the new tree
+        final int nextIndex = widget.powierzchnia.drzewa.length + 1;
+        _numerDrzewaController.text = nextIndex.toString();
+      });
     } else {
       Navigator.pop(dialogContext);
     }
   }
+}
 
+class AutoDecimalFormatter extends TextInputFormatter {
+  final int decimalDigits;
 
+  AutoDecimalFormatter({required this.decimalDigits});
 
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    // Strip out everything except numbers
+    String digitsOnly = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
+
+    if (digitsOnly.isEmpty) {
+      return const TextEditingValue(text: '');
+    }
+
+    // Shift the decimal place automatically
+    double value = int.parse(digitsOnly) / math.pow(10, decimalDigits);
+    String formatted = value.toStringAsFixed(decimalDigits);
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
 }

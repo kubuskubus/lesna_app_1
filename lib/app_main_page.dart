@@ -153,222 +153,320 @@ class _AppMainScreenState extends State<AppMainScreen> {
   AppBar _buildAppBar() {
     return AppBar(
       title: const Text('Powierzchnie próbne'),
-      actions: [
-        // NEW: Format Button
-        IconButton(
-          icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
-          tooltip: 'Formatuj pamięć',
-          onPressed: _showFormatDialog,
-        ),
-        IconButton(
-          icon: const Icon(Icons.data_object),
-          tooltip: 'Nadpisz plik JSON',
-          onPressed: () async {
-            // Pass the exact name of the file you want to overwrite in memory
-            bool success = await _dataHandler.mergeOrInitExternalFile('powierzchnie.json');
-            if (success) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Plik JSON został pomyślnie nadpisany!')),
-                );
-              }
-              _handleRefresh(); // Reloads the UI data from the newly overwritten file
-            }
-          },
-        ),
-        TextButton(
-          onPressed: () async {
-            bool success = await _dataHandler.exportPowierzchnieJson();
-
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(success
-                      ? 'Plik JSON został pomyślnie wyeksportowany!'
-                      : 'Anulowano eksport lub plik nie istnieje.'),
+      // The 'bottom' property places widgets below the main title
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(48.0), // Allocate height for the buttons
+        child: Padding(
+          padding: const EdgeInsets.only(right: 8.0, bottom: 4.0), // Match standard AppBar padding
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end, // Align buttons to the right
+            children: [
+              // NEW: Format Button
+              IconButton(
+                icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
+                tooltip: 'Formatuj pamięć',
+                onPressed: _showFormatDialog,
+              ),
+              TextButton(
+                onPressed: () async {
+                  // Pass the exact name of the file you want to overwrite in memory
+                  bool success = await _dataHandler.mergeOrInitExternalFile('powierzchnie.json');
+                  if (success) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Plik JSON został pomyślnie nadpisany!')),
+                      );
+                    }
+                    _handleRefresh(); // Reloads the UI data from the newly overwritten file
+                  }
+                },
+                child: const Text(
+                  'Import JSON',
+                  style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold),
                 ),
-              );
-            }
-          },
-          child: const Text(
-            'Eksport JSON',
-            style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold),
+              ),
+              TextButton(
+                onPressed: () async {
+                  bool success = await _dataHandler.exportPowierzchnieJson();
+
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(success
+                            ? 'Plik JSON został pomyślnie wyeksportowany!'
+                            : 'Anulowano eksport lub plik nie istnieje.'),
+                      ),
+                    );
+                  }
+                },
+                child: const Text(
+                  'Eksport JSON',
+                  style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
   Widget _buildBody() {
-    return Column(
-      children: [
-        // 1. The Search Window at the top
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: TextField(
-            controller: _searchController,
-            onChanged: (query) {
-              setState(() {
-                _isSearching = query.isNotEmpty;
-                if (_isSearching) {
-                  _filteredNumPp = _allNumPp
-                      .where((item) => item.numPp.startsWith(query))
-                      .toList();
-                }
-              });
-            },
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: 'Szukaj num_pp w bazie...',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              // Use clear button to reset the view back to _powierzchnie
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                icon: const Icon(Icons.clear),
-                onPressed: () {
-                  setState(() {
-                    _searchController.clear();
-                    _isSearching = false;
-                    _filteredNumPp.clear();
-                  });
-                  FocusScope.of(context).unfocus(); // Close keyboard
-                },
-              )
-                  : null,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // 1. Search Bar
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (query) {
+                setState(() {
+                  _isSearching = query.isNotEmpty;
+                  if (_isSearching) {
+                    _filteredNumPp = _allNumPp
+                        .where((item) => item.numPp.startsWith(query))
+                        .toList();
+                  }
+                });
+              },
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Szukaj num_pp w bazie...',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    setState(() {
+                      _searchController.clear();
+                      _isSearching = false;
+                      _filteredNumPp.clear();
+                    });
+                    FocusScope.of(context).unfocus();
+                  },
+                )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),
-        ),
 
-        // 2. The Dynamic Content Below
-        Expanded(
-          child: _isSearching
-              ? _buildSearchResults()     // Show JSON suggestions if typing
-              : _buildPowierzchnieList(), // Show normal data if not typing
-        ),
-      ],
+          // 2. The Unified Table
+          _buildUnifiedTable(
+            child: _isSearching
+                ? _buildSearchListView() // Renders WydzielenieModel from JSON
+                : _buildMainListView(),  // Renders PowierzchniaModel from memory
+          ),
+        ],
+      ),
     );
   }
 
-  // Helper: Renders the search results from JSON
-  Widget _buildSearchResults() {
-    return ListView.builder(
+  Widget _buildSearchListView() {
+    if (_filteredNumPp.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(24.0),
+        child: Text('Brak wyników wyszukiwania.', style: TextStyle(color: Colors.grey)),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: _filteredNumPp.length,
+      separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade300),
       itemBuilder: (context, index) {
         final item = _filteredNumPp[index];
 
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: ListTile(
-            leading: const Icon(Icons.location_on_outlined),
-            title: Text(
-              'num_pp: ${item.numPp}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text('Adres leśny: ${item.adressLes}'),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
-            onTap: () {
-              // 1. Check if this surface is already active in your DataHandler
-              int existingIndex = _dataHandler.powierzchnie.indexWhere((p) => p.numer == item.numPp);
-
-              if (existingIndex >= 0) {
-                // Surface exists, load it and navigate
-                PowierzchniaModel currentPowierzchnia = _dataHandler.powierzchnie[existingIndex];
-
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => PowierzchniaDetailScreen(
-                      powierzchnia: currentPowierzchnia,
-                      wydzData: item, // Pass the read-only reference data
-                      onUpdate: () async {
-                        setState(() {});
-                        await _dataHandler.savePowierzchnie();
-                      },
-                    ),
-                  ),
-                );
-              } else {
-                // Surface is not active, prompt the user to use the + button
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Powierzchnia ${item.numPp} nie została dodana. Użyj przycisku +, aby ją utworzyć.'),
-                    duration: const Duration(seconds: 3),
-                  ),
-                );
-              }
-            },
-          ),
+        // The unified row handles everything else internally!
+        return _buildUnifiedTableRow(
+          index: index,
+          numer: item.numPp,
+          adres: item.adressLes,
+          isSearchResult: true,
         );
       },
     );
   }
 
-// Helper: Your original logic for existing powierzchnie
-  Widget _buildPowierzchnieList() {
+  Widget _buildMainListView() {
     if (_powierzchnieList.isEmpty) {
-      return const Center(
-        child: Text(
-          'Brak danych. Kliknij "Wczytaj" lub + aby dodać.',
-          style: TextStyle(color: Colors.white70, fontSize: 16),
-        ),
+      return const Padding(
+        padding: EdgeInsets.all(24.0),
+        child: Text('Brak danych. Kliknij "Wczytaj" lub + aby dodać.', style: TextStyle(color: Colors.grey)),
       );
     }
 
-    return ListView.builder(
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: _powierzchnieList.length,
+      separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade300),
       itemBuilder: (context, index) {
         final item = _powierzchnieList[index];
-        return _buildPowierzchniaItem(item, index);
+
+        // The unified row handles everything else internally!
+        return _buildUnifiedTableRow(
+          index: index,
+          numer: item.numer,
+          adres: item.adres,
+          isSearchResult: false,
+        );
       },
     );
   }
 
-  Widget _buildPowierzchniaItem(PowierzchniaModel item, int index) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: ListTile(
-        title: Text('Powierzchnia ${item.numer}'),
-        subtitle: item.adres.isNotEmpty ? Text('Adres: ${item.adres}') : null,
-        trailing: Row(
+  Widget _buildUnifiedTable({required Widget child}) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 8.0, bottom: 80.0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              tooltip: 'Usuń',
-              onPressed: () => _deletePowierzchnia(index),
-            ),
-            const Icon(Icons.arrow_forward_ios, size: 16),
-          ],
-        ),
-        onTap: () {
-          // 1. Znajdź dopasowane dane "tylko do odczytu" w DataHandler
-          int wydzIndex = _dataHandler.wydzList.indexWhere((w) => w.numPp == item.numer);
-          WydzielenieModel? matchingWydz = wydzIndex >= 0
-              ? _dataHandler.wydzList[wydzIndex]
-              : null;
-
-          // 2. Przejdź do ekranu i przekaż oba modele
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PowierzchniaDetailScreen(
-                powierzchnia: _powierzchnieList[index],
-                wydzData: matchingWydz, // <-- Przekazanie danych tylko do odczytu
-                onUpdate: () async {
-                  setState(() {});
-                  await _dataHandler.savePowierzchnie();
-                },
+            // --- SHARED TABLE HEADER ---
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+              ),
+              child: const Row(
+                children: [
+                  Expanded(flex: 1, child: Text('Nr.', style: TextStyle(fontWeight: FontWeight.bold))),
+                  Expanded(flex: 2, child: Text('Num_pp', style: TextStyle(fontWeight: FontWeight.bold))),
+                  Expanded(flex: 3, child: Text('Adres', style: TextStyle(fontWeight: FontWeight.bold))),
+                  Expanded(flex: 2, child: Text('Akcje', style: TextStyle(fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
+                ],
               ),
             ),
-          );
-        },
+
+            // --- DYNAMIC ROWS GO HERE ---
+            child,
+          ],
+        ),
       ),
     );
   }
+
+
+  Widget _buildUnifiedTableRow({
+    required int index,
+    required String numer,
+    required String adres,
+    bool isSearchResult = false,
+  }) {
+    // Check if the surface exists in memory
+    bool existsInMainList = _dataHandler.powierzchnie.any((p) => p.numer == numer);
+
+    // Variable to track if the surface has any trees assigned
+    bool hasTrees = false;
+
+    if (existsInMainList) {
+      int powIndex = _dataHandler.powierzchnie.indexWhere((p) => p.numer == numer);
+      if (powIndex != -1) {
+        PowierzchniaModel tempPow = _dataHandler.powierzchnie[powIndex];
+        hasTrees = tempPow.drzewa.isNotEmpty;
+      }
+    }
+
+    // Helper flag
+    bool isAdded = !isSearchResult || existsInMainList;
+
+    // Actions column
+    Widget actionsWidget = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          icon: Icon(
+            isAdded ? Icons.info_outline : Icons.add_circle_outline,
+            color: isAdded ? Colors.blue : Colors.green,
+            size: 22,
+          ),
+          tooltip: isAdded ? 'Info' : 'Add',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          onPressed: () {
+            if (isAdded) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Surface info: $numer')),
+              );
+            }
+          },
+        ),
+        const SizedBox(width: 16),
+        const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+      ],
+    );
+
+    // CHANGED: Wrapped Material in Padding to introduce a tiny visual gap
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Material(
+        color: hasTrees ? Colors.amber.shade50 : Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            if (isAdded) {
+              int powIndex = _dataHandler.powierzchnie.indexWhere((p) => p.numer == numer);
+              if (powIndex == -1) return;
+
+              PowierzchniaModel currentPowierzchnia = _dataHandler.powierzchnie[powIndex];
+              int wydzIndex = _dataHandler.wydzList.indexWhere((w) => w.numPp == numer);
+              WydzielenieModel? matchingWydz = wydzIndex >= 0 ? _dataHandler.wydzList[wydzIndex] : null;
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PowierzchniaDetailScreen(
+                    powierzchnia: currentPowierzchnia,
+                    wydzData: matchingWydz,
+                    onUpdate: () async {
+                      setState(() {});
+                      await _dataHandler.savePowierzchnie();
+                    },
+                  ),
+                ),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Surface $numer is not added. Use the + button to create it.'),
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(flex: 1, child: Text('${index + 1}')),
+                Expanded(
+                  flex: 2,
+                  child: Text(numer, style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                Expanded(flex: 3, child: Text(adres.isNotEmpty ? adres : '-')),
+                Expanded(flex: 2, child: actionsWidget),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+
+
+
 
   Widget _buildBottomActionsRow() {
     bool isConnected = BleConnector.isConnected;
@@ -399,100 +497,6 @@ class _AppMainScreenState extends State<AppMainScreen> {
     );
   }
 
-  void _showEditPowierzchniaDialog(WydzielenieModel? item) {
-    // 1. Zmieniono 'selectedData' na 'item' oraz użyto notacji obiektowej (item.numPp)
-    final TextEditingController numerController = TextEditingController(
-      text: item != null ? item.numPp : '',
-    );
-
-    // Dodatkowo: automatycznie pre-wypełnia adres leśny jeśli jest dostępny
-    final TextEditingController adresController = TextEditingController(
-      text: item != null ? item.adressLes : '',
-    );
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Nowa powierzchnia'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: numerController,
-                decoration: const InputDecoration(
-                  labelText: 'Numer',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: adresController,
-                decoration: const InputDecoration(
-                  labelText: 'Adres leśny (opcjonalny)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Anuluj'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final String parsedNumer = numerController.text.trim();
-
-                if (parsedNumer.isEmpty) {
-                  return;
-                }
-
-                // Update state using the master list in DataHandler
-                int existingIndex = _dataHandler.powierzchnie.indexWhere((p) => p.numer == parsedNumer);
-                PowierzchniaModel currentPowierzchnia;
-
-                if (existingIndex >= 0) {
-                  currentPowierzchnia = _dataHandler.powierzchnie[existingIndex];
-                } else {
-                  // 2. Usunięto argument wydz_data, ponieważ usunęliśmy go z PowierzchniaModel
-                  currentPowierzchnia = PowierzchniaModel(
-                    numer: parsedNumer,
-                    adres: adresController.text.trim(),
-                  );
-
-                  setState(() {
-                    _dataHandler.powierzchnie.add(currentPowierzchnia);
-                    _powierzchnieList = _dataHandler.powierzchnie; // Synchronizacja UI
-                  });
-
-                  await _dataHandler.savePowierzchnie();
-                }
-
-                if (!context.mounted) return;
-                Navigator.of(context).pop();
-
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => PowierzchniaDetailScreen(
-                      powierzchnia: currentPowierzchnia,
-                      wydzData: item, // 3. Przekazujemy dane 'tylko do odczytu' bezpośrednio do ekranu
-                      onUpdate: () async {
-                        setState(() {});
-                        await _dataHandler.savePowierzchnie(); // Zapis z pustymi nawiasami
-                      },
-                    ),
-                  ),
-                );
-              },
-              child: const Text('Dodaj'),
-            )
-          ],
-        );
-      },
-    );
-  }
 
   // Deleting data from app
   void _showFormatDialog() {
