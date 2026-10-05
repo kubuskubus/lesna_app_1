@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:lesna_app_1/screens/powierzchnia_model.dart';
+import 'package:lesna_app_1/screens/powierzchnia_screen/powierzchnia_model.dart';
 import 'connector/bluetooth_device.dart';
-import 'screens/powierzchnia_details.dart';
+import 'screens/powierzchnia_screen/powierzchnia_details.dart';
 import '../data_handler/data_handler.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';

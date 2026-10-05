@@ -3,17 +3,18 @@
 class PowierzchniaModel {
   String numer;
   String adres;
-  String warstwa; // Added variable (stored as a string representation of an integer)
+  List<int> warstwa; // Changed to List of integers
   List<DrzewoModel> drzewa;
   List<Gatunek> gatunki;
 
   PowierzchniaModel({
     required this.numer,
     required this.adres,
-    required this.warstwa, // Added to constructor
+    List<int>? warstwa, // Made optional so it can fallback to default
     List<DrzewoModel>? drzewa,
     List<Gatunek>? gatunki,
-  })  : drzewa = drzewa ?? [],
+  })  : warstwa = warstwa ?? [1], // Defaults to [1] if not provided
+        drzewa = drzewa ?? [],
         gatunki = gatunki ?? [];
 
   factory PowierzchniaModel.fromJson(Map<String, dynamic> json) {
@@ -27,10 +28,23 @@ class PowierzchniaModel {
         ? gatunkiFromJson.map((i) => Gatunek.fromJson(Map<String, dynamic>.from(i))).toList()
         : [];
 
+    // Safely parse the list of integers, defaulting to [1] if missing or malformed
+    List<int> parsedWarstwa = [1];
+    if (json['warstwa'] is List) {
+      parsedWarstwa = (json['warstwa'] as List)
+          .map((e) => int.tryParse(e.toString()) ?? 1)
+          .toList();
+
+      // Ensure the list is not empty, fallback to [1] just in case
+      if (parsedWarstwa.isEmpty) {
+        parsedWarstwa = [1];
+      }
+    }
+
     return PowierzchniaModel(
       numer: json['numer'] ?? '',
       adres: json['adres'] ?? '',
-      warstwa: json['warstwa']?.toString() ?? '', // Safely handles both String and int from JSON
+      warstwa: parsedWarstwa,
       drzewa: parsedDrzewa,
       gatunki: parsedGatunki,
     );
@@ -40,7 +54,7 @@ class PowierzchniaModel {
     return {
       'numer': numer,
       'adres': adres,
-      'warstwa': warstwa, // Added to JSON export
+      'warstwa': warstwa, // Saves directly as a JSON array (e.g., [1, 2])
       'drzewa': drzewa.map((d) => d.toJson()).toList(),
       'gatunki': gatunki.map((g) => g.toJson()).toList(),
     };
@@ -49,10 +63,11 @@ class PowierzchniaModel {
 
 
 class DrzewoModel {
-  final int numer; // Changed from 'number' to 'numer'
+  final int numer;
   String powierzchniaNumer;
   String gatunek;
   String typ;
+  int warstwa; // <-- DODANE
   double srednica;
   double wysokosc;
   double azymut;
@@ -61,10 +76,11 @@ class DrzewoModel {
   int klasaRozkladu;
 
   DrzewoModel({
-    required this.numer, // Changed from 'number' to 'numer'
+    required this.numer,
     required this.powierzchniaNumer,
     required this.gatunek,
     required this.typ,
+    this.warstwa = 1, // <-- DODANE (wartość domyślna to 1)
     this.srednica = 0.0,
     this.wysokosc = 0.0,
     this.azymut = 0.0,
@@ -79,6 +95,8 @@ class DrzewoModel {
       powierzchniaNumer: json['powierzchnia_numer'] ?? '',
       gatunek: json['gatunek'] ?? '',
       typ: json['typ'] ?? 'zywe',
+      // Bezpieczne parsowanie, domyślnie 1 w przypadku braku lub błędu
+      warstwa: int.tryParse(json['warstwa']?.toString() ?? '1') ?? 1,
       srednica: (json['srednica'] ?? 0.0).toDouble(),
       wysokosc: (json['wysokosc'] ?? 0.0).toDouble(),
       azymut: (json['azymut'] ?? 0.0).toDouble(),
@@ -94,6 +112,7 @@ class DrzewoModel {
       'powierzchnia_numer': powierzchniaNumer,
       'gatunek': gatunek,
       'typ': typ,
+      'warstwa': warstwa, // <-- DODANE
       'srednica': srednica,
       'wysokosc': wysokosc,
       'azymut': azymut,

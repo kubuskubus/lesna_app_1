@@ -6,7 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
 // Ensure these imports match your project structure
-import '../screens/powierzchnia_model.dart';
+import '../screens/powierzchnia_screen/powierzchnia_model.dart';
 
 class DataHandler {
   // --- IN-MEMORY DATA STORAGE ---
