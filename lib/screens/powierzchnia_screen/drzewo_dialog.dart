@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lesna_app_1/screens/powierzchnia_screen/powierzchnia_details.dart';
 import 'package:lesna_app_1/screens/powierzchnia_screen/powierzchnia_model.dart';
+
+import '../../connector/bluetooth_service.dart';
 // TODO: Import your models here (DrzewoModel, PowierzchniaModel, Gatunek, DialogMode, AutoDecimalFormatter)
 
 class DrzewoDialog extends StatefulWidget {
@@ -34,6 +38,9 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
   late List<Gatunek> _localGatunki; // Local list so the dropdown updates instantly
   String? numerError;
 
+  // --- NEW: Add the Bluetooth subscription variable ---
+  StreamSubscription<double>? _treeSubscription;
+
   final TextEditingController _numerDrzewaController = TextEditingController();
   final TextEditingController _srednicaController = TextEditingController();
   final TextEditingController _wysokoscController = TextEditingController();
@@ -50,7 +57,7 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     super.initState();
     currentMode = widget.initialMode;
     currentGlobalIndex = widget.initialGlobalIndex;
-    _localGatunki = List.from(widget.initialDynamicGatunki); // Load starting species
+    _localGatunki = List.from(widget.initialDynamicGatunki);
 
     _initializeDialogFields(currentMode, widget.existingTree);
 
@@ -59,10 +66,26 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     } else {
       _generateNextNumber();
     }
+
+    // --- NEW: Start listening to Bluetooth inside the dialog ---
+    _treeSubscription = BluetoothServiceManager().onTreeMeasured.listen((diameter) {
+      if (mounted) { // Make sure the dialog is still open
+        setState(() {
+          _srednicaController.text = diameter.toStringAsFixed(1);
+          // Move the cursor to the end of the text
+          _srednicaController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _srednicaController.text.length),
+          );
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    // --- NEW: Cancel the Bluetooth listener when dialog closes ---
+    _treeSubscription?.cancel();
+
     _numerDrzewaController.dispose();
     _srednicaController.dispose();
     _wysokoscController.dispose();
@@ -307,24 +330,42 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     isExpanded: true,
-                    value: _selectedDrzewoGatunek,
+
+                    // 1. Safely create a unique key for the currently selected item.
+                    // If the user manually typed an age that doesn't exist in the list, this prevents a crash by returning null.
+                    value: _localGatunki.any((g) => '${g.nazwa}_${g.wiek}' == '${_selectedDrzewoGatunek}_${_wiekController.text.isEmpty ? '0' : _wiekController.text}')
+                        ? '${_selectedDrzewoGatunek}_${_wiekController.text.isEmpty ? '0' : _wiekController.text}'
+                        : null,
+
                     decoration: InputDecoration(
                       labelText: 'Gatunek',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     ),
+
                     items: _localGatunki.map((gatunekObj) {
                       final String combinedLabel = '${gatunekObj.nazwa}${gatunekObj.wiek}';
+
+                      // 2. Create a UNIQUE string for each dropdown item combining Name and Age
+                      final String uniqueKey = '${gatunekObj.nazwa}_${gatunekObj.wiek}';
+
                       return DropdownMenuItem<String>(
-                        value: gatunekObj.nazwa,
+                        value: uniqueKey, // <-- Use the unique key instead of just nazwa
                         child: Text(combinedLabel),
                       );
                     }).toList(),
+
                     onChanged: (String? val) {
                       if (val != null) {
                         setState(() {
-                          _selectedDrzewoGatunek = val;
-                          final selectedGatunekObj = _localGatunki.firstWhere((g) => g.nazwa == val);
-                          _wiekController.text = selectedGatunekObj.wiek > 0 ? selectedGatunekObj.wiek.toString() : '';
+                          // 3. Find the selected object by comparing the unique key
+                          final selectedGatunekObj = _localGatunki.firstWhere(
+                                (g) => '${g.nazwa}_${g.wiek}' == val,
+                          );
+
+                          _selectedDrzewoGatunek = selectedGatunekObj.nazwa;
+                          _wiekController.text = selectedGatunekObj.wiek > 0
+                              ? selectedGatunekObj.wiek.toString()
+                              : '';
                         });
                       }
                     },

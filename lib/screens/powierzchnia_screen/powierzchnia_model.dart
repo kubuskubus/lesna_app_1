@@ -67,7 +67,7 @@ class DrzewoModel {
   String powierzchniaNumer;
   String gatunek;
   String typ;
-  int warstwa; // <-- DODANE
+  int warstwa;
   double srednica;
   double wysokosc;
   double azymut;
@@ -75,18 +75,22 @@ class DrzewoModel {
   int wiek;
   int klasaRozkladu;
 
+  // Runtime only - Not saved or loaded!
+  bool wysRequired;
+
   DrzewoModel({
     required this.numer,
     required this.powierzchniaNumer,
     required this.gatunek,
     required this.typ,
-    this.warstwa = 1, // <-- DODANE (wartość domyślna to 1)
+    this.warstwa = 1,
     this.srednica = 0.0,
     this.wysokosc = 0.0,
     this.azymut = 0.0,
     this.odl = 0.0,
     this.wiek = 0,
     this.klasaRozkladu = 0,
+    this.wysRequired = false, // Starts as false every time the app loads
   });
 
   factory DrzewoModel.fromJson(Map<String, dynamic> json) {
@@ -95,7 +99,6 @@ class DrzewoModel {
       powierzchniaNumer: json['powierzchnia_numer'] ?? '',
       gatunek: json['gatunek'] ?? '',
       typ: json['typ'] ?? 'zywe',
-      // Bezpieczne parsowanie, domyślnie 1 w przypadku braku lub błędu
       warstwa: int.tryParse(json['warstwa']?.toString() ?? '1') ?? 1,
       srednica: (json['srednica'] ?? 0.0).toDouble(),
       wysokosc: (json['wysokosc'] ?? 0.0).toDouble(),
@@ -103,6 +106,7 @@ class DrzewoModel {
       odl: (json['odl'] ?? 0.0).toDouble(),
       wiek: json['wiek'] ?? 0,
       klasaRozkladu: json['klasa_rozkladu'] ?? 0,
+      // OMITTED: wysRequired is not read from JSON
     );
   }
 
@@ -112,13 +116,14 @@ class DrzewoModel {
       'powierzchnia_numer': powierzchniaNumer,
       'gatunek': gatunek,
       'typ': typ,
-      'warstwa': warstwa, // <-- DODANE
+      'warstwa': warstwa,
       'srednica': srednica,
       'wysokosc': wysokosc,
       'azymut': azymut,
       'odl': odl,
       'wiek': wiek,
       'klasa_rozkladu': klasaRozkladu,
+      // OMITTED: wysRequired is not saved to JSON
     };
   }
 }

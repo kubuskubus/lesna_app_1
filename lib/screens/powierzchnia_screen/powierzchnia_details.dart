@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:lesna_app_1/screens/powierzchnia_screen/pomiar_wysokosci.dart';
 import '../../data_handler/data_handler.dart';
 import 'drzewo_dialog.dart';
 import 'kontrola_powierzchni.dart';
@@ -39,12 +40,23 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   bool _isMeasurementModeActive = false;
   int _currentMeasurementIndex = -1;
 
+  // Sorting table
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
+
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   StreamSubscription<double>? _treeSubscription;
 
 
   // --- Controllers & State for Drzewo ---
   String _selectedDrzewoGatunek = 'SO';
+  // --- NEW SEPARATED VARIABLES (for the Expansion Tile & BLE Auto-add) ---
+// --- NEW SEPARATED VARIABLES ---
+  String _defaultGatunekWysokosc = 'Wsz'; // Changed to 'Wsz'
+  int _defaultWiekWysokosc = 0;
+  // --- NEW VARIABLE FOR HEIGHT MEASUREMENT TOGGLE ---
+  bool _isWysokoscPomiarActive = false;
+
   String _selectedDrzewoTyp = 'zywe';
   final TextEditingController _srednicaController = TextEditingController();
   final TextEditingController _wysokoscController = TextEditingController();
@@ -113,12 +125,10 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // _buildHeaderTitle(),
-            // const SizedBox(height: 12),
-            // _buildActionButtonsRow(),
+            // --- NEW: Expandable Gatunek List ---
+            _buildWysokoscToggleAndGatunek(),
 
-            // REMOVED: const SizedBox(height: 20), <-- This was causing the huge gap
-
+            const SizedBox(height: 4), // Small spacing before tabs
             _buildContentArea(),
           ],
         ),
@@ -184,6 +194,156 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     );
   }
 
+  Widget _buildWysokoscToggleAndGatunek() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // --- 1. THE TOGGLE BUTTON ---
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: ElevatedButton.icon(
+            onPressed: () {
+              setState(() {
+                // Toggle the state
+                _isWysokoscPomiarActive = !_isWysokoscPomiarActive;
+
+                // --- NEW: Reset to 'Wsz' when closing the menu ---
+                if (!_isWysokoscPomiarActive) {
+                  _defaultGatunekWysokosc = 'Wsz';
+                  _defaultWiekWysokosc = 0;
+                }
+              });
+            },
+            icon: Icon(
+              _isWysokoscPomiarActive ? Icons.straighten : Icons.height,
+              color: _isWysokoscPomiarActive ? Colors.blue : Colors.grey.shade700,
+            ),
+            label: const Text(
+              'Pomiar wysokości',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _isWysokoscPomiarActive ? Colors.blue.shade50 : Colors.white,
+              foregroundColor: Colors.black87,
+              elevation: 0,
+              side: BorderSide(
+                color: _isWysokoscPomiarActive ? Colors.blue : Colors.grey.shade300,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+
+        // --- 2. CONDITIONALLY DISPLAY THE EXPANSION LIST ---
+        if (_isWysokoscPomiarActive)
+          _buildGatunekExpansion(),
+      ],
+    );
+  }
+
+  Widget _buildGatunekExpansion() {
+    return Card(
+      margin: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+      elevation: 0,
+      color: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade300),
+      ),
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        title: Text(
+          // Displays the age too if it's not 'Wsz'
+          'Wybrany gatunek: $_defaultGatunekWysokosc' + (_defaultGatunekWysokosc == 'Wsz' ? '' : ' $_defaultWiekWysokosc'),
+          style: const TextStyle(fontWeight: FontWeight.w500),
+        ),
+        subtitle: const Text('Kliknij, aby zmienić / filtrować', style: TextStyle(fontSize: 12)),
+        childrenPadding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 16.0),
+        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 8.0,
+            runSpacing: 8.0,
+            children: [
+              // --- 1. THE "Wsz" (All) CHIP ---
+              ChoiceChip(
+                label: const Text('Wsz'),
+                selected: _defaultGatunekWysokosc == 'Wsz',
+                selectedColor: Colors.blue.shade100,
+                backgroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: BorderSide(
+                    color: _defaultGatunekWysokosc == 'Wsz' ? Colors.blue : Colors.grey.shade300,
+                  ),
+                ),
+                onSelected: (bool selected) {
+                  if (selected) {
+                    setState(() {
+                      _defaultGatunekWysokosc = 'Wsz';
+                      _defaultWiekWysokosc = 0;
+                    });
+                  }
+                },
+              ),
+
+              // --- 2. DYNAMIC SPECIES SOURCED DIRECTLY FROM TREES ---
+              ..._getGatunkiFromExistingTrees().map((gatunek) {
+
+                // FIXED: Now checks BOTH name AND age to prevent duplicate highlighting
+                final bool isSelected = _defaultGatunekWysokosc == gatunek.nazwa && _defaultWiekWysokosc == gatunek.wiek;
+
+                return ChoiceChip(
+                  label: Text('${gatunek.nazwa} ${gatunek.wiek}'),
+                  selected: isSelected,
+                  selectedColor: Colors.blue.shade100,
+                  backgroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(
+                      color: isSelected ? Colors.blue : Colors.grey.shade300,
+                    ),
+                  ),
+                  onSelected: (bool selected) {
+                    if (selected) {
+                      setState(() {
+                        _defaultGatunekWysokosc = gatunek.nazwa;
+                        _defaultWiekWysokosc = gatunek.wiek;
+                      });
+                    }
+                  },
+                );
+              }),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Gatunek> _getGatunkiFromExistingTrees() {
+    final seen = <String>{};
+    final List<Gatunek> result = [];
+
+    for (var drzewo in widget.powierzchnia.drzewa) {
+      // Create a unique key for each Gatunek + Age combination
+      final key = '${drzewo.gatunek}_${drzewo.wiek}';
+
+      if (seen.add(key)) {
+        result.add(Gatunek(nazwa: drzewo.gatunek, wiek: drzewo.wiek));
+      }
+    }
+
+    // Optional: Sort them alphabetically so they look nice in the list
+    result.sort((a, b) => a.nazwa.compareTo(b.nazwa));
+
+    return result;
+  }
+
 
   Widget _buildContentArea() {
     return Expanded(
@@ -217,7 +377,12 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
                 // Tab 3: Kontrola
                 SingleChildScrollView(
-                  child: KontrolaPowierzchni.buildKontrolaTable(_currentDrzewa),
+                  // Only pass trees that match the currently selected layer
+                  child: KontrolaPowierzchni.buildKontrolaTable(
+                    widget.powierzchnia.drzewa
+                        .where((tree) => tree.warstwa == _selectedWarstwa)
+                        .toList(),
+                  ),
                 ),
               ],
             ),
@@ -239,15 +404,32 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
 // 1. Unify the widget to accept a list of trees
   Widget _buildTreeTabContent(List<DrzewoModel> treesList) {
-    // --- NEW: Filter the list to show only trees matching the selected warstwa ---
-    final List<DrzewoModel> filteredTrees = treesList
-        .where((tree) => tree.warstwa == _selectedWarstwa)
-        .toList();
+
+    // --- CHANGED: Only reset the trees belonging to this specific Tab! ---
+    // Instead of widget.powierzchnia.drzewa, we use treesList.
+    for (var tree in treesList) {
+      tree.wysRequired = false;
+    }
+
+    // --- 2. Filter the list ---
+    final List<DrzewoModel> filteredTrees = treesList.where((tree) {
+      bool matchesWarstwa = tree.warstwa == _selectedWarstwa;
+      bool matchesGatunek = true;
+      if (_defaultGatunekWysokosc != 'Wsz') {
+        matchesGatunek = (tree.gatunek == _defaultGatunekWysokosc && tree.wiek == _defaultWiekWysokosc);
+      }
+      return matchesWarstwa && matchesGatunek;
+    }).toList();
+
+    // --- 3. Apply the flags ONLY if the mode is active ---
+    if (_isWysokoscPomiarActive) {
+      final pomiarManager = PomiarWysokosci(powierzchnia: widget.powierzchnia);
+      pomiarManager.wyznaczDrzewaDoWysokosci(filteredTrees);
+    }
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       children: [
-        // Pass the filtered list instead of the full list
         _buildDrzewaTable(filteredTrees),
       ],
     );
@@ -255,10 +437,25 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
 
   Widget _buildDrzewaTable(List<DrzewoModel> drzewaList) {
+    // --- NEW: Copy the list so we can safely sort it locally ---
+    List<DrzewoModel> displayList = List.from(drzewaList);
+
+    // If the height measurement mode is active, force ascending sort by 'Odl.'
+    if (_isWysokoscPomiarActive) {
+      displayList.sort((a, b) => a.odl.compareTo(b.odl));
+    }
+
+    // --- YOU CAN ADJUST COLUMN WIDTHS HERE ---
+    final double colNrWidth = 20.0;
+    final double colGatWidth = 40.0;
+    final double colOdlWidth = 35.0;
+    final double colSredWidth = 35.0;
+    final double colWysWidth = 35.0;
+    final double colAkcjeWidth = 30.0;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         return Container(
-          width: double.infinity,
           decoration: BoxDecoration(
             border: Border.all(color: Colors.grey.shade300),
             borderRadius: BorderRadius.circular(8),
@@ -269,72 +466,115 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
             child: ConstrainedBox(
               constraints: BoxConstraints(minWidth: constraints.maxWidth),
               child: DataTable(
+                // --- NEW: Force the sort indicator on the 'Odl.' column (index 2) ---
+                sortColumnIndex: _isWysokoscPomiarActive ? 2 : _sortColumnIndex,
+                sortAscending: _isWysokoscPomiarActive ? true : _sortAscending,
+
                 headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-                columnSpacing: 24,
+                columnSpacing: 12,
                 dataRowMinHeight: 40,
                 dataRowMaxHeight: 48,
-                columns: const [
-                  DataColumn(label: Text('Nr.', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Gat.', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Śred. [cm]', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Wys. [m]', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Akcje', style: TextStyle(fontWeight: FontWeight.bold))),
+                columns: [
+                  DataColumn(
+                    label: SizedBox(width: colNrWidth, child: const Text('Nr.', style: TextStyle(fontWeight: FontWeight.bold))),
+                    onSort: _onSort,
+                  ),
+                  DataColumn(
+                    label: SizedBox(width: colGatWidth, child: const Text('Gat.', style: TextStyle(fontWeight: FontWeight.bold))),
+                    onSort: _onSort,
+                  ),
+                  DataColumn(
+                    label: SizedBox(width: colOdlWidth, child: const Text('Odl.', style: TextStyle(fontWeight: FontWeight.bold))),
+                    onSort: _onSort,
+                    numeric: true,
+                  ),
+                  DataColumn(
+                    label: SizedBox(width: colSredWidth, child: const Text('Śred.', style: TextStyle(fontWeight: FontWeight.bold))),
+                    onSort: _onSort,
+                    numeric: true,
+                  ),
+                  DataColumn(
+                    label: SizedBox(width: colWysWidth, child: const Text('Wys.', style: TextStyle(fontWeight: FontWeight.bold))),
+                    onSort: _onSort,
+                    numeric: true,
+                  ),
+                  DataColumn(
+                    label: SizedBox(width: colAkcjeWidth, child: const Text('Akcje', style: TextStyle(fontWeight: FontWeight.bold))),
+                  ),
                 ],
-                rows: List.generate(drzewaList.length, (index) {
-                  final drzewo = drzewaList[index];
+                // --- CHANGED: Use displayList instead of drzewaList ---
+                rows: List.generate(displayList.length, (index) {
+                  final drzewo = displayList[index];
                   final globalIndex = widget.powierzchnia.drzewa.indexOf(drzewo);
 
-                  // 1. Nr: Use the permanent number from the model, NOT the list index!
                   final String numerStr = drzewo.numer.toString();
-
-                  // 2. Gat: Species + Age (e.g., SO45)
                   final String gatunekStr = '${drzewo.gatunek}${drzewo.wiek}';
 
                   return DataRow(
+                    // --- NEW: Conditionally color the row ---
+                    color: WidgetStateProperty.resolveWith<Color?>((Set<WidgetState> states) {
+                      if (drzewo.wysRequired) {
+                        if (drzewo.wysokosc > 0) {
+                          return Colors.green.shade50; // Required AND has value -> Green
+                        } else {
+                          return Colors.red.shade50;   // Required AND NO value -> Red
+                        }
+                      }
+                      return null; // Not required -> Default color (white/transparent)
+                    }),
                     cells: [
+                      // 0: Nr
                       DataCell(
-                        Text(numerStr, style: const TextStyle(fontWeight: FontWeight.w500)),
+                        SizedBox(width: colNrWidth, child: Text(numerStr, style: const TextStyle(fontWeight: FontWeight.w500))),
                         onTap: () {
-                          if (globalIndex >= 0) {
-                            _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
-                          }
+                          if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
                         },
                       ),
+                      // 1: Gat
                       DataCell(
-                        Text(gatunekStr),
+                        SizedBox(width: colGatWidth, child: Text(gatunekStr)),
                         onTap: () {
-                          if (globalIndex >= 0) {
-                            _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
-                          }
+                          if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
                         },
                       ),
+                      // 2: Odl
                       DataCell(
-                        Text(drzewo.srednica > 0 ? drzewo.srednica.toStringAsFixed(1) : '-'),
+                        SizedBox(width: colOdlWidth, child: Text(drzewo.odl > 0 ? drzewo.odl.toStringAsFixed(2) : '-')),
                         onTap: () {
-                          if (globalIndex >= 0) {
-                            _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
-                          }
+                          if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
                         },
                       ),
+                      // 3: Śred
                       DataCell(
-                        Text(drzewo.wysokosc > 0 ? drzewo.wysokosc.toStringAsFixed(1) : '-'),
+                        SizedBox(width: colSredWidth, child: Text(drzewo.srednica > 0 ? drzewo.srednica.toStringAsFixed(1) : '-')),
                         onTap: () {
-                          if (globalIndex >= 0) {
-                            _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
-                          }
+                          if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
                         },
                       ),
+                      // 4: Wys
                       DataCell(
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                          onPressed: () {
-                            if (globalIndex >= 0) {
-                              setState(() {
-                                widget.powierzchnia.drzewa.removeAt(globalIndex);
-                              });
-                              widget.onUpdate();
-                            }
-                          },
+                        SizedBox(width: colWysWidth, child: Text(drzewo.wysokosc > 0 ? drzewo.wysokosc.toStringAsFixed(1) : '-')),
+                        onTap: () {
+                          if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                        },
+                      ),
+                      // 5: Akcje
+                      DataCell(
+                        SizedBox(
+                          width: colAkcjeWidth,
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            alignment: Alignment.centerLeft,
+                            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                            onPressed: () {
+                              if (globalIndex >= 0) {
+                                setState(() {
+                                  widget.powierzchnia.drzewa.removeAt(globalIndex);
+                                });
+                                widget.onUpdate();
+                              }
+                            },
+                          ),
                         ),
                       ),
                     ],
@@ -379,6 +619,40 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
       if (mode == DialogMode.addBatch) {
         setState(() => _isBatchDialogOpen = false);
       }
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+
+      // Assuming you want to sort the underlying data list
+      widget.powierzchnia.drzewa.sort((a, b) {
+        int result;
+        switch (columnIndex) {
+          case 0: // Nr.
+            result = a.numer.compareTo(b.numer);
+            break;
+          case 1: // Gat.
+            result = a.gatunek.compareTo(b.gatunek);
+            break;
+          case 2: // Odl. [m]  <-- This is now index 2
+            result = a.odl.compareTo(b.odl);
+            break;
+          case 3: // Śred. [cm] <-- This is now index 3
+            result = a.srednica.compareTo(b.srednica);
+            break;
+          case 4: // Wys. [m]   <-- This is now index 4
+            result = a.wysokosc.compareTo(b.wysokosc);
+            break;
+          default:
+            result = 0;
+        }
+        return ascending ? result : -result; // Reverse if descending
+      });
+
+      widget.onUpdate(); // Call your update callback if needed
     });
   }
 
