@@ -52,7 +52,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   String _selectedDrzewoGatunek = 'SO';
   // --- NEW SEPARATED VARIABLES (for the Expansion Tile & BLE Auto-add) ---
 // --- NEW SEPARATED VARIABLES ---
-  String _defaultGatunekWysokosc = 'Wsz'; // Changed to 'Wsz'
+  String _defaultGatunekWysokosc = 'Najgrubsze'; //
   int _defaultWiekWysokosc = 0;
   // --- NEW VARIABLE FOR HEIGHT MEASUREMENT TOGGLE ---
   bool _isWysokoscPomiarActive = false;
@@ -207,9 +207,9 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                 // Toggle the state
                 _isWysokoscPomiarActive = !_isWysokoscPomiarActive;
 
-                // --- NEW: Reset to 'Wsz' when closing the menu ---
+                // --- NEW: Reset to 'Najgrubsze' when closing the menu ---
                 if (!_isWysokoscPomiarActive) {
-                  _defaultGatunekWysokosc = 'Wsz';
+                  _defaultGatunekWysokosc = 'Najgrubsze';
                   _defaultWiekWysokosc = 0;
                 }
               });
@@ -254,11 +254,12 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
         side: BorderSide(color: Colors.grey.shade300),
       ),
       child: ExpansionTile(
+        initiallyExpanded: true, // <-- ADD THIS LINE
         shape: const Border(),
         collapsedShape: const Border(),
         title: Text(
-          // Displays the age too if it's not 'Wsz'
-          'Wybrany gatunek: $_defaultGatunekWysokosc' + (_defaultGatunekWysokosc == 'Wsz' ? '' : ' $_defaultWiekWysokosc'),
+          // Displays the age too if it's not 'Najgrubsze'
+          'Wybrany gatunek: $_defaultGatunekWysokosc' + (_defaultGatunekWysokosc == 'Najgrubsze' ? '' : ' $_defaultWiekWysokosc'),
           style: const TextStyle(fontWeight: FontWeight.w500),
         ),
         subtitle: const Text('Kliknij, aby zmienić / filtrować', style: TextStyle(fontSize: 12)),
@@ -269,22 +270,22 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
             spacing: 8.0,
             runSpacing: 8.0,
             children: [
-              // --- 1. THE "Wsz" (All) CHIP ---
+              // --- 1. THE "Najgrubsze" (All) CHIP ---
               ChoiceChip(
-                label: const Text('Wsz'),
-                selected: _defaultGatunekWysokosc == 'Wsz',
+                label: const Text('Najgrubsze'),
+                selected: _defaultGatunekWysokosc == 'Najgrubsze',
                 selectedColor: Colors.blue.shade100,
                 backgroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                   side: BorderSide(
-                    color: _defaultGatunekWysokosc == 'Wsz' ? Colors.blue : Colors.grey.shade300,
+                    color: _defaultGatunekWysokosc == 'Najgrubsze' ? Colors.blue : Colors.grey.shade300,
                   ),
                 ),
                 onSelected: (bool selected) {
                   if (selected) {
                     setState(() {
-                      _defaultGatunekWysokosc = 'Wsz';
+                      _defaultGatunekWysokosc = 'Najgrubsze';
                       _defaultWiekWysokosc = 0;
                     });
                   }
@@ -415,7 +416,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     final List<DrzewoModel> filteredTrees = treesList.where((tree) {
       bool matchesWarstwa = tree.warstwa == _selectedWarstwa;
       bool matchesGatunek = true;
-      if (_defaultGatunekWysokosc != 'Wsz') {
+      if (_defaultGatunekWysokosc != 'Najgrubsze') {
         matchesGatunek = (tree.gatunek == _defaultGatunekWysokosc && tree.wiek == _defaultWiekWysokosc);
       }
       return matchesWarstwa && matchesGatunek;
@@ -424,7 +425,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     // --- 3. Apply the flags ONLY if the mode is active ---
     if (_isWysokoscPomiarActive) {
       final pomiarManager = PomiarWysokosci(powierzchnia: widget.powierzchnia);
-      pomiarManager.wyznaczDrzewaDoWysokosci(filteredTrees);
+      pomiarManager.assignTreesForHeight(filteredTrees, _defaultGatunekWysokosc);
     }
 
     return ListView(
@@ -437,154 +438,141 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
 
   Widget _buildDrzewaTable(List<DrzewoModel> drzewaList) {
-    // --- NEW: Copy the list so we can safely sort it locally ---
     List<DrzewoModel> displayList = List.from(drzewaList);
 
-    // If the height measurement mode is active, force ascending sort by 'Odl.'
     if (_isWysokoscPomiarActive) {
       displayList.sort((a, b) => a.odl.compareTo(b.odl));
     }
 
-    // --- YOU CAN ADJUST COLUMN WIDTHS HERE ---
+    // Adjusted fixed widths. The FittedBox will handle scaling them down to fit the screen.
     final double colNrWidth = 20.0;
-    final double colGatWidth = 40.0;
-    final double colOdlWidth = 35.0;
-    final double colSredWidth = 35.0;
-    final double colWysWidth = 35.0;
-    final double colAkcjeWidth = 30.0;
+    final double colGatWidth = 55.0;
+    final double colOdlWidth = 45.0;
+    final double colSredWidth = 40.0;
+    final double colWysWidth = 40.0;
+    final double colAkcjeWidth = 35.0;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(8),
-            color: Colors.white,
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: DataTable(
-                // --- NEW: Force the sort indicator on the 'Odl.' column (index 2) ---
-                sortColumnIndex: _isWysokoscPomiarActive ? 2 : _sortColumnIndex,
-                sortAscending: _isWysokoscPomiarActive ? true : _sortAscending,
+    return Container(
+      width: double.infinity, // Forces the container to take all available width
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+        color: Colors.white,
+      ),
+      // --- THIS IS THE FIX: Scales the entire table down if it overflows ---
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.topCenter,
+        child: DataTable(
+          // Keep spacing tight to minimize how much it needs to scale
+          columnSpacing: 12.0,
+          horizontalMargin: 12.0,
 
-                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-                columnSpacing: 12,
-                dataRowMinHeight: 40,
-                dataRowMaxHeight: 48,
-                columns: [
-                  DataColumn(
-                    label: SizedBox(width: colNrWidth, child: const Text('Nr.', style: TextStyle(fontWeight: FontWeight.bold))),
-                    onSort: _onSort,
-                  ),
-                  DataColumn(
-                    label: SizedBox(width: colGatWidth, child: const Text('Gat.', style: TextStyle(fontWeight: FontWeight.bold))),
-                    onSort: _onSort,
-                  ),
-                  DataColumn(
-                    label: SizedBox(width: colOdlWidth, child: const Text('Odl.', style: TextStyle(fontWeight: FontWeight.bold))),
-                    onSort: _onSort,
-                    numeric: true,
-                  ),
-                  DataColumn(
-                    label: SizedBox(width: colSredWidth, child: const Text('Śred.', style: TextStyle(fontWeight: FontWeight.bold))),
-                    onSort: _onSort,
-                    numeric: true,
-                  ),
-                  DataColumn(
-                    label: SizedBox(width: colWysWidth, child: const Text('Wys.', style: TextStyle(fontWeight: FontWeight.bold))),
-                    onSort: _onSort,
-                    numeric: true,
-                  ),
-                  DataColumn(
-                    label: SizedBox(width: colAkcjeWidth, child: const Text('Akcje', style: TextStyle(fontWeight: FontWeight.bold))),
-                  ),
-                ],
-                // --- CHANGED: Use displayList instead of drzewaList ---
-                rows: List.generate(displayList.length, (index) {
-                  final drzewo = displayList[index];
-                  final globalIndex = widget.powierzchnia.drzewa.indexOf(drzewo);
-
-                  final String numerStr = drzewo.numer.toString();
-                  final String gatunekStr = '${drzewo.gatunek}${drzewo.wiek}';
-
-                  return DataRow(
-                    // --- NEW: Conditionally color the row ---
-                    color: WidgetStateProperty.resolveWith<Color?>((Set<WidgetState> states) {
-                      if (drzewo.wysRequired) {
-                        if (drzewo.wysokosc > 0) {
-                          return Colors.green.shade50; // Required AND has value -> Green
-                        } else {
-                          return Colors.red.shade50;   // Required AND NO value -> Red
-                        }
-                      }
-                      return null; // Not required -> Default color (white/transparent)
-                    }),
-                    cells: [
-                      // 0: Nr
-                      DataCell(
-                        SizedBox(width: colNrWidth, child: Text(numerStr, style: const TextStyle(fontWeight: FontWeight.w500))),
-                        onTap: () {
-                          if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
-                        },
-                      ),
-                      // 1: Gat
-                      DataCell(
-                        SizedBox(width: colGatWidth, child: Text(gatunekStr)),
-                        onTap: () {
-                          if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
-                        },
-                      ),
-                      // 2: Odl
-                      DataCell(
-                        SizedBox(width: colOdlWidth, child: Text(drzewo.odl > 0 ? drzewo.odl.toStringAsFixed(2) : '-')),
-                        onTap: () {
-                          if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
-                        },
-                      ),
-                      // 3: Śred
-                      DataCell(
-                        SizedBox(width: colSredWidth, child: Text(drzewo.srednica > 0 ? drzewo.srednica.toStringAsFixed(1) : '-')),
-                        onTap: () {
-                          if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
-                        },
-                      ),
-                      // 4: Wys
-                      DataCell(
-                        SizedBox(width: colWysWidth, child: Text(drzewo.wysokosc > 0 ? drzewo.wysokosc.toStringAsFixed(1) : '-')),
-                        onTap: () {
-                          if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
-                        },
-                      ),
-                      // 5: Akcje
-                      DataCell(
-                        SizedBox(
-                          width: colAkcjeWidth,
-                          child: IconButton(
-                            padding: EdgeInsets.zero,
-                            alignment: Alignment.centerLeft,
-                            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                            onPressed: () {
-                              if (globalIndex >= 0) {
-                                setState(() {
-                                  widget.powierzchnia.drzewa.removeAt(globalIndex);
-                                });
-                                widget.onUpdate();
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                }),
-              ),
+          sortColumnIndex: _isWysokoscPomiarActive ? 2 : _sortColumnIndex,
+          sortAscending: _isWysokoscPomiarActive ? true : _sortAscending,
+          headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+          dataRowMinHeight: 40,
+          dataRowMaxHeight: 48,
+          columns: [
+            DataColumn(
+              label: SizedBox(width: colNrWidth, child: const Text('Nr.', style: TextStyle(fontWeight: FontWeight.bold))),
+              onSort: _onSort,
             ),
-          ),
-        );
-      },
+            DataColumn(
+              label: SizedBox(width: colGatWidth, child: const Text('Gat.', style: TextStyle(fontWeight: FontWeight.bold))),
+              onSort: _onSort,
+            ),
+            DataColumn(
+              label: SizedBox(width: colOdlWidth, child: const Text('Odl.', style: TextStyle(fontWeight: FontWeight.bold))),
+              onSort: _onSort,
+              numeric: true,
+            ),
+            DataColumn(
+              label: SizedBox(width: colSredWidth, child: const Text('Śred.', style: TextStyle(fontWeight: FontWeight.bold))),
+              onSort: _onSort,
+              numeric: true,
+            ),
+            DataColumn(
+              label: SizedBox(width: colWysWidth, child: const Text('Wys.', style: TextStyle(fontWeight: FontWeight.bold))),
+              onSort: _onSort,
+              numeric: true,
+            ),
+            DataColumn(
+              label: SizedBox(width: colAkcjeWidth, child: const Text('Akcje', style: TextStyle(fontWeight: FontWeight.bold))),
+            ),
+          ],
+          rows: List.generate(displayList.length, (index) {
+            final drzewo = displayList[index];
+            final globalIndex = widget.powierzchnia.drzewa.indexOf(drzewo);
+
+            final String numerStr = drzewo.numer.toString();
+            final String gatunekStr = '${drzewo.gatunek}${drzewo.wiek}';
+
+            return DataRow(
+              color: WidgetStateProperty.resolveWith<Color?>((Set<WidgetState> states) {
+                if (drzewo.wysRequired) {
+                  if (drzewo.wysokosc > 0) {
+                    return Colors.green.shade50;
+                  } else {
+                    return Colors.red.shade50;
+                  }
+                }
+                return null;
+              }),
+              cells: [
+                DataCell(
+                  SizedBox(width: colNrWidth, child: Text(numerStr, style: const TextStyle(fontWeight: FontWeight.w500))),
+                  onTap: () {
+                    if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                  },
+                ),
+                DataCell(
+                  SizedBox(width: colGatWidth, child: Text(gatunekStr)),
+                  onTap: () {
+                    if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                  },
+                ),
+                DataCell(
+                  SizedBox(width: colOdlWidth, child: Text(drzewo.odl > 0 ? drzewo.odl.toStringAsFixed(2) : '-')),
+                  onTap: () {
+                    if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                  },
+                ),
+                DataCell(
+                  SizedBox(width: colSredWidth, child: Text(drzewo.srednica > 0 ? drzewo.srednica.toStringAsFixed(1) : '-')),
+                  onTap: () {
+                    if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                  },
+                ),
+                DataCell(
+                  SizedBox(width: colWysWidth, child: Text(drzewo.wysokosc > 0 ? drzewo.wysokosc.toStringAsFixed(1) : '-')),
+                  onTap: () {
+                    if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                  },
+                ),
+                DataCell(
+                  SizedBox(
+                    width: colAkcjeWidth,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      alignment: Alignment.centerLeft,
+                      icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                      onPressed: () {
+                        if (globalIndex >= 0) {
+                          setState(() {
+                            widget.powierzchnia.drzewa.removeAt(globalIndex);
+                          });
+                          widget.onUpdate();
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }),
+        ),
+      ),
     );
   }
 

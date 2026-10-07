@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:lesna_app_1/screens/powierzchnia_screen/info_screen.dart';
 import 'package:lesna_app_1/screens/powierzchnia_screen/powierzchnia_model.dart';
 import 'connector/bluetooth_device.dart';
 import 'screens/powierzchnia_screen/powierzchnia_details.dart';
@@ -342,12 +343,14 @@ class _AppMainScreenState extends State<AppMainScreen> {
               ),
               child: const Row(
                 children: [
-                  Expanded(flex: 1, child: Text('Nr.', style: TextStyle(fontWeight: FontWeight.bold))),
-                  Expanded(flex: 2, child: Text('Num_pp', style: TextStyle(fontWeight: FontWeight.bold))),
-                  Expanded(flex: 3, child: Text('Adres', style: TextStyle(fontWeight: FontWeight.bold))),
+                  // Changed flex from 2 to 1
+                  Expanded(flex: 1, child: Text('KPP', style: TextStyle(fontWeight: FontWeight.bold))),
+                  // Changed flex from 3 to 4
+                  Expanded(flex: 4, child: Text('Adres leśny', style: TextStyle(fontWeight: FontWeight.bold))),
+                  // Kept at flex 2
                   Expanded(flex: 2, child: Text('Akcje', style: TextStyle(fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
                 ],
-              ),
+              )
             ),
 
             // --- DYNAMIC ROWS GO HERE ---
@@ -365,18 +368,16 @@ class _AppMainScreenState extends State<AppMainScreen> {
     required String adres,
     bool isSearchResult = false,
   }) {
-    // Check if the surface exists in memory
-    bool existsInMainList = _dataHandler.powierzchnie.any((p) => p.numer == numer);
+    // 1. Find the specific surface for this row
+    int powIndex = _dataHandler.powierzchnie.indexWhere((p) => p.numer == numer);
+    bool existsInMainList = powIndex != -1;
 
-    // Variable to track if the surface has any trees assigned
+    PowierzchniaModel? currentPowierzchnia;
     bool hasTrees = false;
 
     if (existsInMainList) {
-      int powIndex = _dataHandler.powierzchnie.indexWhere((p) => p.numer == numer);
-      if (powIndex != -1) {
-        PowierzchniaModel tempPow = _dataHandler.powierzchnie[powIndex];
-        hasTrees = tempPow.drzewa.isNotEmpty;
-      }
+      currentPowierzchnia = _dataHandler.powierzchnie[powIndex];
+      hasTrees = currentPowierzchnia.drzewa.isNotEmpty;
     }
 
     // Helper flag
@@ -387,39 +388,34 @@ class _AppMainScreenState extends State<AppMainScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         IconButton(
-          icon: Icon(
-            isAdded ? Icons.info_outline : Icons.add_circle_outline,
-            color: isAdded ? Colors.blue : Colors.green,
-            size: 22,
-          ),
-          tooltip: isAdded ? 'Info' : 'Add',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
+          icon: const Icon(Icons.info_outline),
+          tooltip: 'Informacje o powierzchni',
           onPressed: () {
-            if (isAdded) {
+            // 2. Pass the specific surface for this row, not widget.powierzchnia
+            if (currentPowierzchnia != null) {
+              showDialog(
+                context: context,
+                builder: (context) => PowierzchniaInfoDialog(powierzchnia: currentPowierzchnia!),
+              );
+            } else {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Surface info: $numer')),
+                const SnackBar(content: Text('Zapisz powierzchnię, aby zobaczyć informacje.')),
               );
             }
           },
-        ),
+        ), // <-- FIXED: Added the missing comma here
         const SizedBox(width: 16),
         const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
       ],
     );
 
-    // CHANGED: Wrapped Material in Padding to introduce a tiny visual gap
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.0),
       child: Material(
         color: hasTrees ? Colors.amber.shade50 : Colors.transparent,
         child: InkWell(
           onTap: () {
-            if (isAdded) {
-              int powIndex = _dataHandler.powierzchnie.indexWhere((p) => p.numer == numer);
-              if (powIndex == -1) return;
-
-              PowierzchniaModel currentPowierzchnia = _dataHandler.powierzchnie[powIndex];
+            if (isAdded && currentPowierzchnia != null) {
               int wydzIndex = _dataHandler.wydzList.indexWhere((w) => w.numPp == numer);
               WydzielenieModel? matchingWydz = wydzIndex >= 0 ? _dataHandler.wydzList[wydzIndex] : null;
 
@@ -427,7 +423,7 @@ class _AppMainScreenState extends State<AppMainScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => PowierzchniaDetailScreen(
-                    powierzchnia: currentPowierzchnia,
+                    powierzchnia: currentPowierzchnia!,
                     wydzData: matchingWydz,
                     onUpdate: () async {
                       setState(() {});
@@ -439,7 +435,7 @@ class _AppMainScreenState extends State<AppMainScreen> {
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Surface $numer is not added. Use the + button to create it.'),
+                  content: Text('Powierzchnia $numer nie została dodana. Użyj przycisku +, aby ją utworzyć.'),
                   duration: const Duration(seconds: 3),
                 ),
               );
@@ -449,15 +445,17 @@ class _AppMainScreenState extends State<AppMainScreen> {
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
             child: Row(
               children: [
-                Expanded(flex: 1, child: Text('${index + 1}')),
+                // Changed flex from 2 to 1
                 Expanded(
-                  flex: 2,
+                  flex: 1,
                   child: Text(numer, style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
-                Expanded(flex: 3, child: Text(adres.isNotEmpty ? adres : '-')),
+                // Changed flex from 3 to 4
+                Expanded(flex: 4, child: Text(adres.isNotEmpty ? adres : '-')),
+                // Kept at flex 2
                 Expanded(flex: 2, child: actionsWidget),
               ],
-            ),
+            )
           ),
         ),
       ),

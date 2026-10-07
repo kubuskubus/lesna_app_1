@@ -43,41 +43,57 @@ class PomiarWysokosci {
     return groupedTrees[key] ?? []; // Returns empty list if no trees match
   }
 
-  /// Funkcja do wyznaczania drzew, dla których wymagany jest pomiar wysokości
-  void wyznaczDrzewaDoWysokosci(List<DrzewoModel> filteredTrees) {
-    // 1. Zresetuj flagę wysRequired dla wszystkich drzew na liście (czysty start)
+  /// Function to designate trees for which height measurement is required
+  void assignTreesForHeight(List<DrzewoModel> filteredTrees, String defaultHeightMode) {
+    // 1. Reset the wysRequired flag for all trees in the list (clean start)
     for (var tree in filteredTrees) {
       tree.wysRequired = false;
     }
 
     if (filteredTrees.isEmpty) return;
 
-    // 2. Tworzymy kopię listy, aby móc ją swobodnie sortować po 'odl'
-    List<DrzewoModel> sortedByOdl = List.from(filteredTrees);
-    sortedByOdl.sort((a, b) => a.odl.compareTo(b.odl));
+    // 2. Check which mode is selected
+    if (defaultHeightMode == 'Najgrubsze') {
+      // MODE: "Najgrubsze" (The Thickest)
+      // Create a copy and sort by 'srednica' (diameter) in DESCENDING order
+      List<DrzewoModel> sortedByDiameterDesc = List.from(filteredTrees);
+      sortedByDiameterDesc.sort((a, b) => b.srednica.compareTo(a.srednica));
 
-    // 3. Take ONLY the first subgroup (max 6 closest trees)
-    // Instead of a for loop, we just check if there are fewer than 6 trees, or take exactly 6.
-    int end = sortedByOdl.length < 6 ? sortedByOdl.length : 6;
-    List<DrzewoModel> closestSubgroup = sortedByOdl.sublist(0, end);
+      // Determine how many trees to flag (maximum 4)
+      int count = sortedByDiameterDesc.length < 4 ? sortedByDiameterDesc.length : 4;
 
-    // 4. Sort this single subgroup by 'srednica' (ascending)
-    closestSubgroup.sort((a, b) => a.srednica.compareTo(b.srednica));
-
-    // 5. Change the flag for the 2 middle trees (only from this 6-tree group)
-    int n = closestSubgroup.length;
-    if (n <= 2) {
-      // If there are only 1 or 2 trees in total, mark all of them
-      for (var tree in closestSubgroup) {
-        tree.wysRequired = true;
+      // Flag the thickest trees
+      for (int i = 0; i < count; i++) {
+        sortedByDiameterDesc[i].wysRequired = true;
       }
     } else {
-      // Calculate the middle indices strictly for this single group of max 6 trees
-      int midRight = n ~/ 2;
-      int midLeft = midRight - 1;
+      // DEFAULT MODE: Middle trees from the 6 closest
+      // Create a copy of the list to sort freely by 'odl' (distance) in ASCENDING order
+      List<DrzewoModel> sortedByDistance = List.from(filteredTrees);
+      sortedByDistance.sort((a, b) => a.odl.compareTo(b.odl));
 
-      closestSubgroup[midLeft].wysRequired = true;
-      closestSubgroup[midRight].wysRequired = true;
+      // Take ONLY the first subgroup (max 6 closest trees)
+      int end = sortedByDistance.length < 6 ? sortedByDistance.length : 6;
+      List<DrzewoModel> closestSubgroup = sortedByDistance.sublist(0, end);
+
+      // Sort this single subgroup by 'srednica' (diameter) in ASCENDING order
+      closestSubgroup.sort((a, b) => a.srednica.compareTo(b.srednica));
+
+      // Change the flag for the 2 middle trees (only from this 6-tree group)
+      int n = closestSubgroup.length;
+      if (n <= 2) {
+        // If there are only 1 or 2 trees in total, mark all of them
+        for (var tree in closestSubgroup) {
+          tree.wysRequired = true;
+        }
+      } else {
+        // Calculate the middle indices strictly for this single group of max 6 trees
+        int midRight = n ~/ 2;
+        int midLeft = midRight - 1;
+
+        closestSubgroup[midLeft].wysRequired = true;
+        closestSubgroup[midRight].wysRequired = true;
+      }
     }
   }
 

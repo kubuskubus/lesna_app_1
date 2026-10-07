@@ -16,6 +16,29 @@ class KontrolaPowierzchni {
     return true;
   }
 
+  /// Checks if all trees in the list have a valid azimuth (0 - 360 degrees).
+  static bool checkWszystkieMajaAzymut(List<DrzewoModel> drzewa) {
+    if (drzewa.isEmpty) return false;
+    for (var drzewo in drzewa) {
+      if (drzewo.azymut < 0 || drzewo.azymut > 360) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Checks if all trees in the list have a valid distance (> 0).
+  static bool checkWszystkieMajaOdl(List<DrzewoModel> drzewa) {
+    if (drzewa.isEmpty) return false;
+    for (var drzewo in drzewa) {
+      // Add an upper limit like "|| drzewo.odl > 50" if needed
+      if (drzewo.odl <= 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /// Groups trees and checks if for each group (Gatunek + Wiek),
   /// the required trees (based on the pomiar_wysokosci algorithm) have their height measured.
   static Map<String, bool> checkWysokosciDlaGrup(List<DrzewoModel> drzewa) {
@@ -62,6 +85,26 @@ class KontrolaPowierzchni {
     return wynikiGrup;
   }
 
+  static bool checkWysokosciDlaNajgrubszych(List<DrzewoModel> drzewa) {
+    if (drzewa.isEmpty) return true;
+
+    // 1. Create a copy of the list and sort by diameter (srednica) in DESCENDING order
+    List<DrzewoModel> sortedByDiameterDesc = List.from(drzewa);
+    sortedByDiameterDesc.sort((a, b) => b.srednica.compareTo(a.srednica));
+
+    // 2. Determine the limit (maximum 4 trees, or fewer if the list is smaller)
+    int limit = sortedByDiameterDesc.length < 4 ? sortedByDiameterDesc.length : 4;
+
+    // 3. Check if all trees in this top group have a height > 0
+    for (int i = 0; i < limit; i++) {
+      if (sortedByDiameterDesc[i].wysokosc <= 0) {
+        return false; // Found a thickest tree missing its height
+      }
+    }
+
+    return true; // All required thickest trees have their height measured
+  }
+
   // --- 2. UI DISPLAY METHOD ---
 
   /// Builds the table view for the "Kontrola" tab.
@@ -73,13 +116,19 @@ class KontrolaPowierzchni {
 
     // Run the logical checks
     bool testSrednice = checkWszystkieMajaSrednice(drzewa); // We check diameter for ALL trees
+    bool testAzymut = checkWszystkieMajaAzymut(drzewa);     // EXTRA CHECK: Azimuth
+    bool testOdl = checkWszystkieMajaOdl(drzewa);           // EXTRA CHECK: Distance
+
+    // --- EXTRA CHECK: Check height for the 4 thickest trees overall ---
+    bool testNajgrubsze = checkWysokosciDlaNajgrubszych(drzewa);
 
     // Check heights separately for living and dead groups
     Map<String, bool> testyWysokosciZywe = checkWysokosciDlaGrup(zywe);
     Map<String, bool> testyWysokosciMartwe = checkWysokosciDlaGrup(martwe);
 
     return Padding(
-      padding: const EdgeInsets.all(16.0),
+      // Reduces left/right padding to 4.0 while keeping top/bottom at 16.0
+      padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 16.0),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -116,6 +165,27 @@ class KontrolaPowierzchni {
             _buildKontrolaRow(
               nazwaKontroli: 'Wszystkie drzewa mają średnicę',
               wynik: testSrednice,
+            ),
+            const Divider(height: 1, color: Colors.black12),
+
+            // --- CHECK 1A: Azymut (General check) ---
+            _buildKontrolaRow(
+              nazwaKontroli: 'Wszystkie drzewa mają azymut',
+              wynik: testAzymut,
+            ),
+            const Divider(height: 1, color: Colors.black12),
+
+            // --- CHECK 1B: Odległość (General check) ---
+            _buildKontrolaRow(
+              nazwaKontroli: 'Wszystkie drzewa mają odległość',
+              wynik: testOdl,
+            ),
+            const Divider(height: 1, color: Colors.black12),
+
+            // --- CHECK 2: Najgrubsze (General check) ---
+            _buildKontrolaRow(
+              nazwaKontroli: '4 najgrubsze drzewa mają wysokość',
+              wynik: testNajgrubsze,
             ),
 
             // --- SECTION: DRZEWA ŻYWE ---
