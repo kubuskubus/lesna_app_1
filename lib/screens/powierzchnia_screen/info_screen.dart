@@ -37,12 +37,15 @@ class PowierzchniaInfoDialog extends StatelessWidget {
             // Zaktualizowany wiersz: Numer wydzielenia wyliczany na podstawie adresu
             _buildInfoRow(
               'Numer wydzielenia:',
-              (powierzchnia.adres != null && powierzchnia.adres!.length > 12)
-                  ? powierzchnia.adres!.substring(10, powierzchnia.adres!.length - 3).trim()
-                  : (powierzchnia.adres ?? 'Brak'),
+              (powierzchnia.adres.isNotEmpty && powierzchnia.adres.first.length > 12)
+                  ? powierzchnia.adres.first.substring(10, powierzchnia.adres.first.length - 3).trim()
+                  : (powierzchnia.adres.isNotEmpty ? powierzchnia.adres.first : 'Brak'),
             ),
 
-            _buildInfoRow('Adres leśny:', powierzchnia.adres ?? 'Brak'),
+            _buildInfoRow(
+              'Adres leśny:',
+              powierzchnia.adres.isNotEmpty ? powierzchnia.adres.join(', ') : 'Brak',
+            ),
 
             const Divider(height: 30, thickness: 1),
 

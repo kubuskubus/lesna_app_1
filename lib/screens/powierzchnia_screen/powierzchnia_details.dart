@@ -39,6 +39,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   final List<String> _logs = [];
   bool _isMeasurementModeActive = false;
   int _currentMeasurementIndex = -1;
+  double _maxRadiusSurface = 11.28; // Default value for 0 degrees
 
   // Sorting table
   int? _sortColumnIndex;
@@ -57,7 +58,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   // --- NEW VARIABLE FOR HEIGHT MEASUREMENT TOGGLE ---
   bool _isWysokoscPomiarActive = false;
 
-  String _selectedDrzewoTyp = 'zywe';
+
   final TextEditingController _srednicaController = TextEditingController();
   final TextEditingController _wysokoscController = TextEditingController();
   final TextEditingController _azymutController = TextEditingController();
@@ -68,10 +69,6 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   // Add this near your TextEditingControllers
   final FocusNode _srednicaFocusNode = FocusNode();
 
-  final List<String> _gatunki = ['SO', 'MD', 'ŚW', 'JD', 'BK'];
-
-  // Filtered lists belonging strictly to this specific Powierzchnia
-// Filtered lists belonging strictly to this specific Powierzchnia
   List<DrzewoModel> get _currentDrzewa => widget.powierzchnia.drzewa
       .where((d) => d.typ == 'zywe')
       .toList();
@@ -83,7 +80,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   // Add this variable
   late TabController _tabController;
 
-  int _selectedWarstwa = 1;
+  String _selectedWarstwa = '1'; // Default value as a string
 
   @override
   void initState() {
@@ -92,6 +89,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     _tabController = TabController(length: 3, vsync: this);
     _treeSubscription = BluetoothServiceManager().onTreeMeasured.listen(_handleIncomingBleMeasurement);
     placeholderFunction();
+    // _inputNachylenieValue();
+    _setMaxPromienPowierzchni(); // Calculates and saves the radius based on current nachylenie
     _syncGatunkiFromWydzData(); // Synchronizes and saves missing species on open
     if (widget.powierzchnia.warstwa.isNotEmpty) {
       _selectedWarstwa = widget.powierzchnia.warstwa.first;
@@ -115,6 +114,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     super.dispose();
   }
 
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -127,7 +128,6 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
           children: [
             // --- NEW: Expandable Gatunek List ---
             _buildWysokoscToggleAndGatunek(),
-
             const SizedBox(height: 4), // Small spacing before tabs
             _buildContentArea(),
           ],
@@ -136,61 +136,279 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     );
   }
 
+  void _inputNachylenieValue() {
+    // Reset transient state left over from a previous visit
+    _isMeasurementModeActive = false;
+    _currentMeasurementIndex = -1;
+    _isBatchDialogOpen = false;
+    _isDrzewoDialogOpen = false;
+    _isWysokoscPomiarActive = false;
+    _defaultGatunekWysokosc = 'Najgrubsze';
+    _defaultWiekWysokosc = 0;
+
+    // Make sure the selected layer still exists in this powierzchnia
+    final warstwy = widget.powierzchnia.warstwa;
+    if (warstwy.isNotEmpty && !warstwy.contains(_selectedWarstwa)) {
+      _selectedWarstwa = warstwy.first;
+    }
+
+    // Check if nachylenie is 100 and prompt for a new value
+    if (widget.powierzchnia.nachylenie == 100) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+
+        int? _selectedNachylenie; // Local variable to hold the dropdown state
+        final List<int> _availableValues = [0, 5, 10, 15, 20, 25, 30, 35];
+
+        showDialog(
+          context: context,
+          barrierDismissible: false, // User must select a value
+          builder: (BuildContext dialogContext) {
+            // StatefulBuilder is required here so the Dropdown updates visually when changed
+            return StatefulBuilder(
+              builder: (context, setStateDialog) {
+                return PopScope(
+                  canPop: false, // Replaces WillPopScope to prevent Android back button
+                  child: AlertDialog(
+                    title: const Text('Wprowadź nachylenie'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Wybierz wartość nachylenia z listy:'),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<int>(
+                          value: _selectedNachylenie,
+                          decoration: const InputDecoration(
+                            labelText: 'Nachylenie',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _availableValues.map((int value) {
+                            return DropdownMenuItem<int>(
+                              value: value,
+                              child: Text(value.toString()),
+                            );
+                          }).toList(),
+                          onChanged: (int? newValue) {
+                            // Update the local dialog state
+                            setStateDialog(() {
+                              _selectedNachylenie = newValue;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      ElevatedButton(
+                        onPressed: () async {
+                          if (_selectedNachylenie == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Proszę wybrać wartość z listy')),
+                            );
+                            return;
+                          }
+
+                          // 1. Save the new value to your powierzchnia model
+                          setState(() {
+                            widget.powierzchnia.nachylenie = _selectedNachylenie!;
+                          });
+
+                          // 2. Save the change to the JSON file using your widget's callback
+                          if (widget.onUpdate != null) {
+                            widget.onUpdate!();
+                          }
+                          // Note: If onUpdate doesn't handle the file save directly,
+                          // call your file service here, e.g.:
+                          // await TwojSerwisPlikow.zapiszPowierzchnie(widget.powierzchnia);
+
+                          if (mounted) {
+                            Navigator.of(dialogContext).pop();
+                          }
+                        },
+                        child: const Text('Zapisz'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      });
+    }
+  }
+
+  void _setMaxPromienPowierzchni() {
+    final int nachylenie = widget.powierzchnia.nachylenie;
+
+    setState(() {
+      switch (nachylenie) {
+        case 0:
+          _maxRadiusSurface = 11.28; //[cite: 3]
+          break;
+        case 5:
+          _maxRadiusSurface = 11.30; //[cite: 3]
+          break;
+        case 10:
+          _maxRadiusSurface = 11.37; //[cite: 3]
+          break;
+        case 15:
+          _maxRadiusSurface = 11.48; //[cite: 3]
+          break;
+        case 20:
+          _maxRadiusSurface = 11.64; //[cite: 3]
+          break;
+        case 25:
+          _maxRadiusSurface = 11.85; //[cite: 3]
+          break;
+        case 30:
+          _maxRadiusSurface = 12.12; //[cite: 3]
+          break;
+        case 35:
+          _maxRadiusSurface = 12.46; //[cite: 3]
+          break;
+        default:
+          _maxRadiusSurface = 11.28; // Fallback
+      }
+
+      // IMPORTANT: If you want to save this to your JSON file, you must add
+      // maxRadiusSurface as a property in your PowierzchniaModel class.
+      // Uncomment the line below once added to your model:
+      // widget.powierzchnia.maxRadiusSurface = _maxRadiusSurface;
+    });
+
+    // Triggers the file save via your existing callback mechanism
+    if (widget.onUpdate != null) {
+      widget.onUpdate!();
+    }
+  }
+
   AppBar _buildAppBar(BuildContext context) {
+    final List<int> availableValues = [0, 5, 10, 15, 20, 25, 30, 35];
+    // Moved outside of the children list to fix the syntax error
+    final bool showWszystkieOption = widget.powierzchnia.warstwa.length > 1;
+
     return AppBar(
-      title: Text('Powierzchnia nr. ${widget.powierzchnia.numer}'),
-      actions: [
-        // --- NOWE: Rozwijana lista (Dropdown) dla warstw ---
-        Padding(
-          padding: const EdgeInsets.only(right: 8.0),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade100, // Inny kolor, aby odróżnić od przycisku dodawania
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<int>(
-                value: _selectedWarstwa,
-                icon: const Icon(Icons.arrow_drop_down, color: Colors.black87),
-                style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
-                // Tworzenie elementów listy na podstawie listy warstw w powierzchni
-                items: widget.powierzchnia.warstwa.map((int warstwaNum) {
-                  return DropdownMenuItem<int>(
-                    value: warstwaNum,
-                    child: Text('Warstwa $warstwaNum'),
-                  );
-                }).toList(),
-                onChanged: (int? newValue) {
-                  if (newValue != null) {
-                    setState(() {
-                      _selectedWarstwa = newValue; // Aktualizacja zmiennej śledzącej
-                    });
-                  }
-                },
+      titleSpacing: 0,
+      title: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            const SizedBox(width: 4),
+
+            // --- Dropdown for slope (nachylenie) ---
+            Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade100,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.terrain, size: 16, color: Colors.black87),
+                  const SizedBox(width: 4),
+                  DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      isDense: true,
+                      value: widget.powierzchnia.nachylenie == 100
+                          ? null
+                          : widget.powierzchnia.nachylenie,
+                      icon: const Icon(Icons.arrow_drop_down, color: Colors.black87, size: 20),
+                      hint: const Text(
+                        '-',
+                        style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
+                      items: availableValues.map((int value) {
+                        return DropdownMenuItem<int>(
+                          value: value,
+                          child: Text('$value°'),
+                        );
+                      }).toList(),
+                      onChanged: (int? newValue) {
+                        if (newValue != null) {
+                          setState(() {
+                            widget.powierzchnia.nachylenie = newValue;
+                          });
+                          if (widget.onUpdate != null) {
+                            widget.onUpdate!();
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-        ),
-        // --- ISTNIEJĄCE: Przycisk dodawania drzewa ---
-        Padding(
-          padding: const EdgeInsets.only(right: 16.0),
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade100,
-              foregroundColor: Colors.black87,
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+
+            const SizedBox(width: 6),
+
+            // --- Dropdown for layers (warstwy) with dynamic 'Wszyst.' option ---
+            Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade100,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isDense: true,
+                  value: _selectedWarstwa,
+                  icon: const Icon(Icons.arrow_drop_down, color: Colors.black87, size: 20),
+                  style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
+                  items: [
+                    if (showWszystkieOption)
+                      const DropdownMenuItem<String>(
+                        value: 'Wszyst.',
+                        child: Text('Wszystkie warstwy'),
+                      ),
+                    ...widget.powierzchnia.warstwa.map((String warstwaStr) {
+                      return DropdownMenuItem<String>(
+                        value: warstwaStr,
+                        child: Text('Wydz. $warstwaStr'),
+                      );
+                    }),
+                  ],
+                  onChanged: (String? newValue) {
+                    if (newValue != null) {
+                      setState(() {
+                        _selectedWarstwa = newValue;
+                      });
+                    }
+                  },
+                ),
+              ),
             ),
-            onPressed: () => _showDrzewoDialog(
-              mode: DialogMode.addSingle,
-              // Możesz teraz przekazać _selectedWarstwa do dialogu, jeśli drzewo ma dziedziczyć tę warstwę
+
+            const SizedBox(width: 6),
+
+            // --- Add tree button ---
+            SizedBox(
+              height: 36,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade100,
+                  foregroundColor: Colors.black87,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+                onPressed: () => _showDrzewoDialog(
+                  mode: DialogMode.addSingle,
+                ),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Drz.', style: TextStyle(fontSize: 13)),
+              ),
             ),
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Drz.'),
-          ),
+
+            const SizedBox(width: 8),
+          ],
         ),
-      ],
+      ),
+      actions: const [],
     );
   }
 
@@ -244,6 +462,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     );
   }
 
+  // Create list of gatunek - and najgrubsze
   Widget _buildGatunekExpansion() {
     return Card(
       margin: const EdgeInsets.only(top: 8.0, bottom: 8.0),
@@ -254,11 +473,10 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
         side: BorderSide(color: Colors.grey.shade300),
       ),
       child: ExpansionTile(
-        initiallyExpanded: true, // <-- ADD THIS LINE
+        initiallyExpanded: true,
         shape: const Border(),
         collapsedShape: const Border(),
         title: Text(
-          // Displays the age too if it's not 'Najgrubsze'
           'Wybrany gatunek: $_defaultGatunekWysokosc' + (_defaultGatunekWysokosc == 'Najgrubsze' ? '' : ' $_defaultWiekWysokosc'),
           style: const TextStyle(fontWeight: FontWeight.w500),
         ),
@@ -269,62 +487,118 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
           Wrap(
             spacing: 8.0,
             runSpacing: 8.0,
-            children: [
-              // --- 1. THE "Najgrubsze" (All) CHIP ---
-              ChoiceChip(
-                label: const Text('Najgrubsze'),
-                selected: _defaultGatunekWysokosc == 'Najgrubsze',
-                selectedColor: Colors.blue.shade100,
-                backgroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(
-                    color: _defaultGatunekWysokosc == 'Najgrubsze' ? Colors.blue : Colors.grey.shade300,
-                  ),
-                ),
-                onSelected: (bool selected) {
-                  if (selected) {
-                    setState(() {
-                      _defaultGatunekWysokosc = 'Najgrubsze';
-                      _defaultWiekWysokosc = 0;
-                    });
-                  }
-                },
-              ),
-
-              // --- 2. DYNAMIC SPECIES SOURCED DIRECTLY FROM TREES ---
-              ..._getGatunkiFromExistingTrees().map((gatunek) {
-
-                // FIXED: Now checks BOTH name AND age to prevent duplicate highlighting
-                final bool isSelected = _defaultGatunekWysokosc == gatunek.nazwa && _defaultWiekWysokosc == gatunek.wiek;
-
-                return ChoiceChip(
-                  label: Text('${gatunek.nazwa} ${gatunek.wiek}'),
-                  selected: isSelected,
-                  selectedColor: Colors.blue.shade100,
-                  backgroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(
-                      color: isSelected ? Colors.blue : Colors.grey.shade300,
-                    ),
-                  ),
-                  onSelected: (bool selected) {
-                    if (selected) {
-                      setState(() {
-                        _defaultGatunekWysokosc = gatunek.nazwa;
-                        _defaultWiekWysokosc = gatunek.wiek;
-                      });
-                    }
-                  },
-                );
-              }),
-            ],
+            children: _buildGatunekChips(), // <-- Dynamic chips generated based on rules
           ),
         ],
       ),
     );
   }
+
+  List<Widget> _buildGatunekChips() {
+    final bool hasMultipleLayers = widget.powierzchnia.warstwa.length > 1;
+    final bool isAllLayersSelected = _selectedWarstwa == 'Wszyst.';
+
+    List<Widget> chips = [];
+
+    // --- RULE: If "Wszyst." is selected, ONLY show "Najgrubsze" ---
+    if (isAllLayersSelected) {
+      chips.add(
+        ChoiceChip(
+          label: const Text('Najgrubsze'),
+          selected: _defaultGatunekWysokosc == 'Najgrubsze',
+          selectedColor: Colors.blue.shade100,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(
+              color: _defaultGatunekWysokosc == 'Najgrubsze' ? Colors.blue : Colors.grey.shade300,
+            ),
+          ),
+          onSelected: (bool selected) {
+            if (selected) {
+              setState(() {
+                _defaultGatunekWysokosc = 'Najgrubsze';
+                _defaultWiekWysokosc = 0;
+              });
+            }
+          },
+        ),
+      );
+      return chips; // Exit early so no species chips are added
+    }
+
+    // --- If a specific layer is selected, or only 1 layer exists ---
+    // Show "Najgrubsze" only if there is just 1 layer total
+    if (!hasMultipleLayers) {
+      chips.add(
+        ChoiceChip(
+          label: const Text('Najgrubsze'),
+          selected: _defaultGatunekWysokosc == 'Najgrubsze',
+          selectedColor: Colors.blue.shade100,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(
+              color: _defaultGatunekWysokosc == 'Najgrubsze' ? Colors.blue : Colors.grey.shade300,
+            ),
+          ),
+          onSelected: (bool selected) {
+            if (selected) {
+              setState(() {
+                _defaultGatunekWysokosc = 'Najgrubsze';
+                _defaultWiekWysokosc = 0;
+              });
+            }
+          },
+        ),
+      );
+    }
+
+    // Filter species strictly belonging to the chosen single layer
+    var availableGatunki = _getGatunkiFromExistingTrees();
+    if (hasMultipleLayers) {
+      availableGatunki = availableGatunki.where((gatunek) {
+        return widget.powierzchnia.drzewa.any((tree) =>
+        tree.warstwa.toString() == _selectedWarstwa &&
+            tree.gatunek == gatunek.nazwa &&
+            tree.wiek == gatunek.wiek
+        );
+      }).toList();
+    }
+
+    // Map the filtered species to ChoiceChips
+    for (var gatunek in availableGatunki) {
+      final bool isSelected = _defaultGatunekWysokosc == gatunek.nazwa && _defaultWiekWysokosc == gatunek.wiek;
+
+      chips.add(
+        ChoiceChip(
+          label: Text('${gatunek.nazwa} ${gatunek.wiek}'),
+          selected: isSelected,
+          selectedColor: Colors.blue.shade100,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(
+              color: isSelected ? Colors.blue : Colors.grey.shade300,
+            ),
+          ),
+          onSelected: (bool selected) {
+            if (selected) {
+              setState(() {
+                _defaultGatunekWysokosc = gatunek.nazwa;
+                _defaultWiekWysokosc = gatunek.wiek;
+              });
+            }
+          },
+        ),
+      );
+    }
+
+    return chips;
+  }
+
+
+
 
   List<Gatunek> _getGatunkiFromExistingTrees() {
     final seen = <String>{};
@@ -414,12 +688,20 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
     // --- 2. Filter the list ---
     final List<DrzewoModel> filteredTrees = treesList.where((tree) {
-      bool matchesWarstwa = tree.warstwa == _selectedWarstwa;
+      // If 'Wszyst.' is selected, match all layers; otherwise, match the specific layer
+      bool matchesWarstwa = (_selectedWarstwa == 'Wszyst.') ||
+          (tree.warstwa.toString() == _selectedWarstwa || tree.warstwa.toString().isEmpty);
+
+      // Optional: Filter by type (e.g., only 'zywe' or 'martwe' depending on your toggle/state)
+      // Replace `_selectedTyp` with your actual variable if you have one, or hardcode the condition if needed.
+      // bool matchesTyp = tree.typ == 'zywe' || tree.typ == 'martwe';
+
       bool matchesGatunek = true;
-      if (_defaultGatunekWysokosc != 'Najgrubsze') {
+      if (_isWysokoscPomiarActive && _defaultGatunekWysokosc != 'Najgrubsze') {
         matchesGatunek = (tree.gatunek == _defaultGatunekWysokosc && tree.wiek == _defaultWiekWysokosc);
       }
-      return matchesWarstwa && matchesGatunek;
+
+      return matchesWarstwa && matchesGatunek; // && matchesTyp (if you need type filtering)
     }).toList();
 
     // --- 3. Apply the flags ONLY if the mode is active ---
@@ -576,13 +858,35 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     );
   }
 
-
-
   void _showDrzewoDialog({
     required DialogMode mode,
     int? globalIndex,
     DrzewoModel? existingTree,
   }) {
+    // --- Check the slope (nachylenie) before opening the dialog ---
+    if (widget.powierzchnia.nachylenie == 100) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Brak nachylenia. Wybierz wartość nachylenia przed dodaniem drzewa.'),
+          backgroundColor: Colors.redAccent,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return; // Exit the function here - the dialog will not open
+    }
+
+    // --- NEW: Block adding a tree if "Wszyst." is selected ---
+    if (_selectedWarstwa == 'Wszyst.') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Wybierz konkretną warstwę przed dodaniem drzewa.'),
+          backgroundColor: Colors.redAccent,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return; // Exit the function here - the dialog will not open
+    }
+
     _isDrzewoDialogOpen = true;
 
     showDialog(
@@ -591,6 +895,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
       builder: (context) {
         return DrzewoDialog(
           powierzchnia: widget.powierzchnia,
+          maxRadiusSurface: _maxRadiusSurface, // Pass it here
           initialMode: mode,
           initialGlobalIndex: globalIndex,
           existingTree: existingTree,
@@ -609,6 +914,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
       }
     });
   }
+
+
 
   void _onSort(int columnIndex, bool ascending) {
     setState(() {

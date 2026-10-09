@@ -1,19 +1,21 @@
-
-
 class PowierzchniaModel {
   String numer;
-  String adres;
-  List<int> warstwa; // Changed to List of integers
+  List<String> adres;
+  List<String> warstwa;
+  int nachylenie; // Default value set to 100
   List<DrzewoModel> drzewa;
   List<Gatunek> gatunki;
 
   PowierzchniaModel({
     required this.numer,
-    required this.adres,
-    List<int>? warstwa, // Made optional so it can fallback to default
+    List<String>? adres,
+    List<String>? warstwa,
+    int? nachylenie,
     List<DrzewoModel>? drzewa,
     List<Gatunek>? gatunki,
-  })  : warstwa = warstwa ?? [1], // Defaults to [1] if not provided
+  })  : adres = adres ?? [],
+        warstwa = warstwa ?? [],
+        nachylenie = nachylenie ?? 100, // Defaults to 100 if not provided
         drzewa = drzewa ?? [],
         gatunki = gatunki ?? [];
 
@@ -28,23 +30,38 @@ class PowierzchniaModel {
         ? gatunkiFromJson.map((i) => Gatunek.fromJson(Map<String, dynamic>.from(i))).toList()
         : [];
 
-    // Safely parse the list of integers, defaulting to [1] if missing or malformed
-    List<int> parsedWarstwa = [1];
+    // Safely parse the list of strings for 'adres'
+    List<String> parsedAdres = [];
+    if (json['adres'] is List) {
+      parsedAdres = (json['adres'] as List)
+          .map((e) => e.toString())
+          .toList();
+    } else if (json['adres'] != null) {
+      parsedAdres = [json['adres'].toString()];
+    }
+
+    // Safely parse the list of strings for 'warstwa', defaulting to ['1'] if missing or malformed
+    List<String> parsedWarstwa = ['1'];
     if (json['warstwa'] is List) {
       parsedWarstwa = (json['warstwa'] as List)
-          .map((e) => int.tryParse(e.toString()) ?? 1)
+          .map((e) => e.toString())
           .toList();
 
-      // Ensure the list is not empty, fallback to [1] just in case
       if (parsedWarstwa.isEmpty) {
-        parsedWarstwa = [1];
+        parsedWarstwa = ['1'];
       }
+    } else if (json['warstwa'] != null) {
+      parsedWarstwa = [json['warstwa'].toString()];
     }
+
+    // Safely parse 'nachylenie', defaulting to 100 if missing or invalid
+    int parsedNachylenie = int.tryParse(json['nachylenie']?.toString() ?? '100') ?? 100;
 
     return PowierzchniaModel(
       numer: json['numer'] ?? '',
-      adres: json['adres'] ?? '',
+      adres: parsedAdres,
       warstwa: parsedWarstwa,
+      nachylenie: parsedNachylenie,
       drzewa: parsedDrzewa,
       gatunki: parsedGatunki,
     );
@@ -54,7 +71,8 @@ class PowierzchniaModel {
     return {
       'numer': numer,
       'adres': adres,
-      'warstwa': warstwa, // Saves directly as a JSON array (e.g., [1, 2])
+      'warstwa': warstwa,
+      'nachylenie': nachylenie,
       'drzewa': drzewa.map((d) => d.toJson()).toList(),
       'gatunki': gatunki.map((g) => g.toJson()).toList(),
     };
@@ -67,15 +85,13 @@ class DrzewoModel {
   String powierzchniaNumer;
   String gatunek;
   String typ;
-  int warstwa;
+  String warstwa;
   double srednica;
   double wysokosc;
-  double azymut;
+  double? azymut; // <-- Make it nullable (double?)
   double odl;
   int wiek;
   int klasaRozkladu;
-
-  // Runtime only - Not saved or loaded!
   bool wysRequired;
 
   DrzewoModel({
@@ -83,30 +99,30 @@ class DrzewoModel {
     required this.powierzchniaNumer,
     required this.gatunek,
     required this.typ,
-    this.warstwa = 1,
+    this.warstwa = '',
     this.srednica = 0.0,
     this.wysokosc = 0.0,
-    this.azymut = 0.0,
+    this.azymut, // <-- Optional, defaults to null if not provided
     this.odl = 0.0,
     this.wiek = 0,
     this.klasaRozkladu = 0,
-    this.wysRequired = false, // Starts as false every time the app loads
+    this.wysRequired = false,
   });
 
   factory DrzewoModel.fromJson(Map<String, dynamic> json) {
     return DrzewoModel(
       numer: json['numer'] ?? 0,
-      powierzchniaNumer: json['powierzchnia_numer'] ?? '',
-      gatunek: json['gatunek'] ?? '',
-      typ: json['typ'] ?? 'zywe',
-      warstwa: int.tryParse(json['warstwa']?.toString() ?? '1') ?? 1,
+      powierzchniaNumer: json['powierzchnia_numer']?.toString() ?? '',
+      gatunek: json['gatunek']?.toString() ?? '',
+      typ: json['typ']?.toString() ?? 'zywe',
+      warstwa: json['warstwa']?.toString() ?? '',
       srednica: (json['srednica'] ?? 0.0).toDouble(),
       wysokosc: (json['wysokosc'] ?? 0.0).toDouble(),
-      azymut: (json['azymut'] ?? 0.0).toDouble(),
+      // Read as nullable double from JSON
+      azymut: json['azymut'] != null ? (json['azymut']).toDouble() : null,
       odl: (json['odl'] ?? 0.0).toDouble(),
       wiek: json['wiek'] ?? 0,
       klasaRozkladu: json['klasa_rozkladu'] ?? 0,
-      // OMITTED: wysRequired is not read from JSON
     );
   }
 
@@ -119,11 +135,10 @@ class DrzewoModel {
       'warstwa': warstwa,
       'srednica': srednica,
       'wysokosc': wysokosc,
-      'azymut': azymut,
+      'azymut': azymut, // Can save as null to the database/json
       'odl': odl,
       'wiek': wiek,
       'klasa_rozkladu': klasaRozkladu,
-      // OMITTED: wysRequired is not saved to JSON
     };
   }
 }
@@ -139,7 +154,6 @@ class Gatunek {
 
   factory Gatunek.fromJson(Map<String, dynamic> json) {
     return Gatunek(
-      // Checking multiple keys just in case it's parsed directly from your raw JSON
       nazwa: json['nazwa'] ?? json['name'] ?? json['gatunek'] ?? '',
       wiek: int.tryParse(json['wiek']?.toString() ?? json['age']?.toString() ?? '0') ?? 0,
     );
@@ -168,14 +182,12 @@ class WydzielenieModel {
   });
 
   factory WydzielenieModel.fromJson(Map<String, dynamic> json) {
-    // Parse the nested 'list_of_trees' directly into Gatunek objects
     var treesFromJson = json['list_of_trees'] as List?;
     List<Gatunek> parsedTrees = treesFromJson != null
         ? treesFromJson.map((i) => Gatunek.fromJson(Map<String, dynamic>.from(i))).toList()
         : [];
 
     return WydzielenieModel(
-      // Safely parse everything to String to handle both int and String JSON formats
       numPp: json['num_pp']?.toString() ?? '',
       adressLes: json['adress_les']?.toString() ?? '',
       numWydz: json['num_wydz']?.toString() ?? '',
@@ -192,4 +204,3 @@ class WydzielenieModel {
     };
   }
 }
-

@@ -6,7 +6,6 @@ import 'package:lesna_app_1/screens/powierzchnia_screen/powierzchnia_details.dar
 import 'package:lesna_app_1/screens/powierzchnia_screen/powierzchnia_model.dart';
 
 import '../../connector/bluetooth_service.dart';
-// TODO: Import your models here (DrzewoModel, PowierzchniaModel, Gatunek, DialogMode, AutoDecimalFormatter)
 
 class DrzewoDialog extends StatefulWidget {
   final PowierzchniaModel powierzchnia;
@@ -14,16 +13,18 @@ class DrzewoDialog extends StatefulWidget {
   final int? initialGlobalIndex;
   final DrzewoModel? existingTree;
   final List<Gatunek> initialDynamicGatunki;
-  final int selectedWarstwa; // <-- ADD THIS VARIABLE
+  final String selectedWarstwa; // <-- Changed from int to String
   final VoidCallback onUpdate;
+  final double maxRadiusSurface; // Add this parameter
 
   const DrzewoDialog({
     Key? key,
     required this.powierzchnia,
     required this.initialMode,
     required this.initialDynamicGatunki,
-    required this.selectedWarstwa, // <-- ADD TO CONSTRUCTOR
+    required this.selectedWarstwa,
     required this.onUpdate,
+    required this.maxRadiusSurface, // <-- Added here
     this.initialGlobalIndex,
     this.existingTree,
   }) : super(key: key);
@@ -35,22 +36,27 @@ class DrzewoDialog extends StatefulWidget {
 class _DrzewoDialogState extends State<DrzewoDialog> {
   late DialogMode currentMode;
   late int? currentGlobalIndex;
-  late List<Gatunek> _localGatunki; // Local list so the dropdown updates instantly
+  late List<Gatunek> _localGatunki;
   String? numerError;
+  String? odlError; // <-- Add this new one
+  String? srednicaError;
+  String? wysokoscError;
+  String? azymutError;
 
-  // --- NEW: Add the Bluetooth subscription variable ---
   StreamSubscription<double>? _treeSubscription;
 
   final TextEditingController _numerDrzewaController = TextEditingController();
   final TextEditingController _srednicaController = TextEditingController();
   final TextEditingController _wysokoscController = TextEditingController();
-  final TextEditingController _azymutController = TextEditingController();
+  // final TextEditingController _azymutController = TextEditingController();
   final TextEditingController _odlController = TextEditingController();
   final TextEditingController _wiekController = TextEditingController();
+  late final TextEditingController _azymutController;
   final FocusNode _srednicaFocusNode = FocusNode();
 
   String _selectedDrzewoTyp = 'zywe';
   String _selectedDrzewoGatunek = '';
+
 
   @override
   void initState() {
@@ -58,21 +64,24 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     currentMode = widget.initialMode;
     currentGlobalIndex = widget.initialGlobalIndex;
     _localGatunki = List.from(widget.initialDynamicGatunki);
+    _azymutController = TextEditingController(
+      text: widget.existingTree?.azymut != null
+          ? widget.existingTree!.azymut.toString()
+          : '',
+    );
 
     _initializeDialogFields(currentMode, widget.existingTree);
-
+// Initialize it once when the widget is created
     if (currentMode == DialogMode.edit && currentGlobalIndex != null) {
       _numerDrzewaController.text = widget.powierzchnia.drzewa[currentGlobalIndex!].numer.toString();
     } else {
       _generateNextNumber();
     }
 
-    // --- NEW: Start listening to Bluetooth inside the dialog ---
     _treeSubscription = BluetoothServiceManager().onTreeMeasured.listen((diameter) {
-      if (mounted) { // Make sure the dialog is still open
+      if (mounted) {
         setState(() {
           _srednicaController.text = diameter.toStringAsFixed(1);
-          // Move the cursor to the end of the text
           _srednicaController.selection = TextSelection.fromPosition(
             TextPosition(offset: _srednicaController.text.length),
           );
@@ -83,9 +92,7 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
 
   @override
   void dispose() {
-    // --- NEW: Cancel the Bluetooth listener when dialog closes ---
     _treeSubscription?.cancel();
-
     _numerDrzewaController.dispose();
     _srednicaController.dispose();
     _wysokoscController.dispose();
@@ -109,7 +116,12 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
       _selectedDrzewoTyp = tree.typ;
       _srednicaController.text = tree.srednica > 0 ? tree.srednica.toString().replaceAll('.', ',') : '';
       _wysokoscController.text = tree.wysokosc > 0 ? tree.wysokosc.toString().replaceAll('.', ',') : '';
-      _azymutController.text = tree.azymut > 0 ? tree.azymut.toStringAsFixed(0) : '';
+
+      // --- UPDATED: Safely handle nullable double? azymut ---
+      _azymutController.text = (tree.azymut != null && tree.azymut! > 0)
+          ? tree.azymut!.toStringAsFixed(0)
+          : '';
+
       _odlController.text = tree.odl > 0 ? tree.odl.toString().replaceAll('.', ',') : '';
       _wiekController.text = tree.wiek > 0 ? tree.wiek.toString() : '';
     } else {
@@ -132,8 +144,6 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     if (inputtedNumer != null) {
       List<int> allNumbers = _getExistingTreeNumbers();
 
-      // Jeśli jesteśmy w trybie edycji, usuwamy z listy oryginalny numer tego drzewa,
-      // aby uniknąć fałszywego błędu przy zapisie bez zmiany numeru.
       if (currentMode == DialogMode.edit && currentGlobalIndex != null) {
         int originalNumber = widget.powierzchnia.drzewa[currentGlobalIndex!].numer;
         allNumbers.remove(originalNumber);
@@ -147,16 +157,65 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     return null;
   }
 
-  /// Zwraca listę numerów drzew, które są już dodane do tej powierzchni
+  String? _checkOdlegloscLimit(String val) {
+    // Replace comma with dot to handle Polish decimal inputs (e.g., "11,2")
+    double? inputtedOdl = double.tryParse(val.trim().replaceAll(',', '.'));
+
+    if (inputtedOdl != null) {
+      if (inputtedOdl > widget.maxRadiusSurface) {
+        return 'Odległość przekracza promień (${widget.maxRadiusSurface} m)';
+      }
+    }
+
+    return null;
+  }
+
+  String? _checkSrednicaLimit(String val) {
+    if (val.trim().isEmpty) return null; // Optional: change to error string if you also want to block empty values here
+    double? parsedVal = double.tryParse(val.trim().replaceAll(',', '.'));
+    if (parsedVal != null && parsedVal < 7) {
+      return 'Średnica musi wynosić min. 7 cm';
+    }
+    return null;
+  }
+
+  String? _checkWysokoscLimit(String val) {
+    if (val.trim().isEmpty) return null;
+    double? parsedVal = double.tryParse(val.trim().replaceAll(',', '.'));
+    if (parsedVal != null && parsedVal > 99) {
+      return 'Wysokość maks. 99 m';
+    }
+    return null;
+  }
+
+  String? _checkAzymutLimit(String val) {
+    // If the user leaves it empty, return null so no red error appears
+    if (val.trim().isEmpty) {
+      return null;
+    }
+
+    // Use double.tryParse to support both integers (0, 360) and decimals (e.g., 12.5)
+    final double? azymut = double.tryParse(val);
+    if (azymut == null) {
+      return 'Błędny format';
+    }
+
+    // Check the valid range for azimuth (0 to 360 degrees)
+    if (azymut < 0 || azymut > 360) {
+      return 'Wartość 0-360';
+    }
+
+    return null;
+  }
+
   List<int> _getExistingTreeNumbers() {
     return widget.powierzchnia.drzewa.map((drzewo) => drzewo.numer).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    // --- LAYOUT VARIABLES (EASILY ADJUSTABLE) ---
-    final double verticalSpacing = 10.0; // Controls the gap between vertical elements (TextFields)
-    final double horizontalSpacing = 8.0; // Controls the gap between the Dropdown and the Add Button
+    final double verticalSpacing = 10.0;
+    final double horizontalSpacing = 8.0;
 
     if ((_selectedDrzewoGatunek.isEmpty || !_localGatunki.any((g) => g.nazwa == _selectedDrzewoGatunek)) && _localGatunki.isNotEmpty) {
       _selectedDrzewoGatunek = _localGatunki.first.nazwa;
@@ -164,14 +223,8 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     }
 
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      // 1. Override the default padding (Flutter gives a large horizontal margin by default)
-      // Change horizontal to 8.0 or 0.0 if you want it even closer to the screen edges
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-
-      // title: Text(currentMode   == DialogMode.edit ? 'Edycja drzewa' : 'Nowe drzewo'),
-
-        // 2. Wrap your SingleChildScrollView inside a SizedBox to force full width
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
         content: SizedBox(
           width: double.maxFinite,
           child: SingleChildScrollView(
@@ -276,8 +329,14 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.next,
                   inputFormatters: [AutoDecimalFormatter(decimalDigits: 1)],
+                  onChanged: (val) {
+                    setState(() {
+                      srednicaError = _checkSrednicaLimit(val);
+                    });
+                  },
                   decoration: InputDecoration(
                     labelText: 'Średnica (cm)',
+                    errorText: srednicaError,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -289,8 +348,14 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.next,
                   inputFormatters: [AutoDecimalFormatter(decimalDigits: 1)],
+                  onChanged: (val) {
+                    setState(() {
+                      wysokoscError = _checkWysokoscLimit(val);
+                    });
+                  },
                   decoration: InputDecoration(
                     labelText: 'Wysokość (m)',
+                    errorText: wysokoscError,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -298,12 +363,23 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
                 SizedBox(height: verticalSpacing),
 
                 TextField(
-                  controller: _azymutController,
+                  controller: _azymutController, // Make sure this is initialized as TextEditingController(text: '')
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.next,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: (val) {
+                    setState(() {
+                      azymutError = _checkAzymutLimit(val);
+                      // Update the existingTree model if it exists
+                      if (widget.existingTree != null) {
+                        // If empty/whitespace -> null, otherwise parse to double (so '0' becomes 0.0)
+                        widget.existingTree!.azymut = val.trim().isEmpty ? null : double.tryParse(val);
+                      }
+                    });
+                  },
                   decoration: InputDecoration(
                     labelText: 'Azymut (°)',
+                    errorText: azymutError, // Will show 'Wymagane' if empty
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -315,52 +391,40 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.next,
                   inputFormatters: [AutoDecimalFormatter(decimalDigits: 2)],
+                  onChanged: (val) {
+                    setState(() {
+                      odlError = _checkOdlegloscLimit(val);
+                    });
+                  },
                   decoration: InputDecoration(
                     labelText: 'Odległość (m)',
+                    errorText: odlError,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
-                // SizedBox(height: verticalSpacing),
-                //
-                // TextField(
-                //   controller: _wiekController,
-                //   keyboardType: TextInputType.number,
-                //   textInputAction: TextInputAction.done,
-                //   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                //   decoration: InputDecoration(
-                //     labelText: 'Wiek (lata)',
-                //     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                //   ),
-                // ),
               ],
             ),
           ),
         ),
-// 1. Force the buttons to spread out to the maximum left and right
       actionsAlignment: MainAxisAlignment.spaceBetween,
-      // Optional: Add a little padding so they don't touch the absolute edge of the dialog
       actionsPadding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 16.0),
-
       actions: [
-        // LEFT BUTTON
         ElevatedButton(
           style: ElevatedButton.styleFrom(
             elevation: 0,
             backgroundColor: numerError != null ? Colors.grey.shade300 : Colors.green.shade200,
             foregroundColor: Colors.black87,
-            alignment: Alignment.center, // Ensures text is in the middle
+            alignment: Alignment.center,
           ),
           onPressed: numerError != null ? null : () => _handleSaveTree(false),
           child: const Text('Zakończ edycję', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
-
-        // RIGHT BUTTON
         ElevatedButton(
           style: ElevatedButton.styleFrom(
             elevation: 0,
             backgroundColor: numerError != null ? Colors.grey.shade300 : Colors.green.shade200,
             foregroundColor: Colors.black87,
-            alignment: Alignment.center, // Ensures text is in the middle
+            alignment: Alignment.center,
           ),
           onPressed: numerError != null ? null : () => _handleSaveTree(true),
           child: const Text('Dodaj następne', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -369,7 +433,6 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     );
   }
 
-  // --- NEW: Moved inside the class ---
   void _showAddGatunekDialog() {
     final TextEditingController nazwaGatunkuController = TextEditingController();
     final TextEditingController wiekGatunkuController = TextEditingController();
@@ -419,14 +482,12 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
                   if (!alreadyExists) {
                     final newGatunek = Gatunek(nazwa: novaNazwa, wiek: nowyWiek);
 
-                    // Update main surface data and save JSON
                     widget.powierzchnia.gatunki.add(newGatunek);
                     widget.onUpdate();
 
-                    // Instantly update the dialog's local state so it appears in the Dropdown!
                     setState(() {
                       _localGatunki.add(newGatunek);
-                      _selectedDrzewoGatunek = novaNazwa; // Auto-select the newly added species
+                      _selectedDrzewoGatunek = novaNazwa;
                       _wiekController.text = nowyWiek > 0 ? nowyWiek.toString() : '';
                     });
                   }
@@ -449,6 +510,11 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
       return;
     }
 
+    // If the text field is empty, inputtedAzymut becomes null naturally
+    final double? inputtedAzymut = double.tryParse(_azymutController.text.replaceAll(',', '.'));
+
+    // 2. OPTION 1: Parse the azimuth text. If the field is empty, it defaults to 999.0
+    // Attempt to read the text. If it is empty, it assigns 999.0
     String inputtedNumerText = _numerDrzewaController.text.trim();
     bool numberExists = _checkNumerExists(inputtedNumerText) != null;
 
@@ -460,19 +526,18 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     }
 
     int inputtedNumer = int.tryParse(inputtedNumerText) ?? 0;
-
     final newTree = DrzewoModel(
       numer: inputtedNumer,
       powierzchniaNumer: widget.powierzchnia.numer,
       gatunek: _selectedDrzewoGatunek,
       typ: _selectedDrzewoTyp,
-      // --- NEW: Assign the correct layer ---
+      // --- CHANGED: Passing the String directly instead of using int.tryParse ---
       warstwa: (currentMode == DialogMode.edit && widget.existingTree != null)
           ? widget.existingTree!.warstwa
           : widget.selectedWarstwa,
       srednica: double.tryParse(_srednicaController.text.replaceAll(',', '.')) ?? 0.0,
       wysokosc: double.tryParse(_wysokoscController.text.replaceAll(',', '.')) ?? 0.0,
-      azymut: double.tryParse(_azymutController.text.replaceAll(',', '.')) ?? 0.0,
+      azymut: inputtedAzymut, // <-- Passes null if the user left it blank
       odl: double.tryParse(_odlController.text.replaceAll(',', '.')) ?? 0.0,
       wiek: int.tryParse(_wiekController.text) ?? 0,
     );
@@ -507,6 +572,4 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
       Navigator.pop(context);
     }
   }
-
-
 }

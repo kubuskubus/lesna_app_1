@@ -20,7 +20,8 @@ class KontrolaPowierzchni {
   static bool checkWszystkieMajaAzymut(List<DrzewoModel> drzewa) {
     if (drzewa.isEmpty) return false;
     for (var drzewo in drzewa) {
-      if (drzewo.azymut < 0 || drzewo.azymut > 360) {
+      // If it's null (was left empty/spaces) or out of range, it fails
+      if (drzewo.azymut == null || drzewo.azymut! < 0 || drzewo.azymut! > 360) {
         return false;
       }
     }

@@ -314,7 +314,7 @@ class _AppMainScreenState extends State<AppMainScreen> {
         return _buildUnifiedTableRow(
           index: index,
           numer: item.numer,
-          adres: item.adres,
+          adres: item.adres.join(', '), // Joins elements like ["Adres 1", "Adres 2"] into "Adres 1, Adres 2"
           isSearchResult: false,
         );
       },
