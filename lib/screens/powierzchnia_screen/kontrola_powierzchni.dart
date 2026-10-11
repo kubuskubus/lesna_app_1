@@ -1,7 +1,179 @@
 import 'package:flutter/material.dart';
+import 'package:lesna_app_1/screens/powierzchnia_screen/pomiar_wysokosci.dart';
 import 'powierzchnia_model.dart'; // Make sure the path to DrzewoModel is correct
 
+
+
+/// A data class to hold the results of all control tests.
+class WynikiKontroli {
+  final bool testSrednice;
+  final bool testAzymut;
+  final bool testOdl;
+  final bool testNajgrubsze;
+  final Map<String, bool> testyWysokosciZywe;
+  final Map<String, bool> testyWysokosciMartwe;
+
+  WynikiKontroli({
+    required this.testSrednice,
+    required this.testAzymut,
+    required this.testOdl,
+    required this.testNajgrubsze,
+    required this.testyWysokosciZywe,
+    required this.testyWysokosciMartwe,
+  });
+}
+
+
+
 class KontrolaPowierzchni {
+
+
+  /// Executes all logical checks and returns the results.
+  static WynikiKontroli wykonajTestyKontrolne({
+    required PowierzchniaModel powierzchnia,
+    required String selectedWarstwa,
+  }) {
+    final List<DrzewoModel> allTrees = powierzchnia.drzewa;
+
+    // --- 1. Filter trees only for the selected layer (for general tests) ---
+    final List<DrzewoModel> treesInLayer = allTrees.where((tree) {
+      return selectedWarstwa == 'Wszyst.' ||
+          tree.warstwa.toString() == selectedWarstwa ||
+          tree.warstwa.toString().isEmpty;
+    }).toList();
+
+    // General tests (Diameter, Azimuth, Distance) are performed on the selected layer
+    bool testSrednice = checkWszystkieMajaSrednice(treesInLayer);
+    bool testAzymut = checkWszystkieMajaAzymut(treesInLayer);
+    bool testOdl = checkWszystkieMajaOdl(treesInLayer);
+
+    // --- 2. Save the original state of the wysRequired flags ---
+    Map<DrzewoModel, bool> originalFlags = {
+      for (var tree in allTrees) tree: tree.wysRequired
+    };
+
+    final pomiarManager = PomiarWysokosci(powierzchnia: powierzchnia);
+
+    // --- 3. Test: "Najgrubsze" (Thickest Trees) ---
+    bool testNajgrubsze = _checkNajgrubsze(
+      pomiarManager: pomiarManager,
+      allTrees: allTrees,
+      selectedWarstwa: selectedWarstwa,
+    );
+
+    // --- 4. Group Tests: 70% Proportion for Live and Dead Trees ---
+
+    // Evaluate Live Trees
+    Map<String, bool> testyWysokosciZywe = _checkGrupyWysokosci(
+      pomiarManager: pomiarManager,
+      allTrees: allTrees,
+      treesInLayer: treesInLayer,
+      typDrzewa: 'zywe',
+      selectedWarstwa: selectedWarstwa,
+    );
+
+    // Evaluate Dead Trees
+    Map<String, bool> testyWysokosciMartwe = _checkGrupyWysokosci(
+      pomiarManager: pomiarManager,
+      allTrees: allTrees,
+      treesInLayer: treesInLayer,
+      typDrzewa: 'martwe',
+      selectedWarstwa: selectedWarstwa,
+    );
+
+    // --- 5. Restore flags to their original state ---
+    for (var tree in allTrees) {
+      tree.wysRequired = originalFlags[tree] ?? false;
+    }
+
+    return WynikiKontroli(
+      testSrednice: testSrednice,
+      testAzymut: testAzymut,
+      testOdl: testOdl,
+      testNajgrubsze: testNajgrubsze,
+      testyWysokosciZywe: testyWysokosciZywe,
+      testyWysokosciMartwe: testyWysokosciMartwe,
+    );
+  }
+
+  /// Evaluates the height requirements for individual groups (species + age)
+  static Map<String, bool> _checkGrupyWysokosci({
+    required PomiarWysokosci pomiarManager,
+    required List<DrzewoModel> allTrees,
+    required List<DrzewoModel> treesInLayer,
+    required String typDrzewa,
+    required String selectedWarstwa,
+  }) {
+    Map<String, bool> testyWysokosci = {};
+    Set<String> unikalneGrupy = {};
+
+    // 1. Collect unique groups (species + age) from the selected layer for the given type
+    for (var tree in treesInLayer) {
+      if (tree.typ == typDrzewa) {
+        unikalneGrupy.add('${tree.gatunek}|${tree.wiek}');
+      }
+    }
+
+    // 2. Evaluate each group
+    for (var group in unikalneGrupy) {
+      var parts = group.split('|');
+      String gatunek = parts[0];
+      int wiek = int.parse(parts[1]);
+
+      List<DrzewoModel> groupTrees = pomiarManager.getTreesForHeightMeasurement(
+        allTrees: allTrees,
+        typDrzewa: typDrzewa,
+        selectedWarstwa: selectedWarstwa,
+        defaultGatunekWysokosc: gatunek,
+        defaultWiekWysokosc: wiek,
+      );
+
+      bool maWymagane = false;
+      bool wszystkieZmierzone = true;
+
+      for (var tree in groupTrees) {
+        if (tree.wysRequired) {
+          maWymagane = true;
+          if (tree.wysokosc <= 0) {
+            wszystkieZmierzone = false;
+            break; // Break the loop early for optimization once a missing measurement is found
+          }
+        }
+      }
+
+      if (maWymagane) {
+        testyWysokosci['$gatunek $wiek'] = wszystkieZmierzone;
+      }
+    }
+
+    return testyWysokosci;
+  }
+
+  /// Evaluates the height measurement requirement for the thickest trees ("Najgrubsze").
+  static bool _checkNajgrubsze({
+    required PomiarWysokosci pomiarManager,
+    required List<DrzewoModel> allTrees,
+    required String selectedWarstwa,
+  }) {
+    List<DrzewoModel> najgrubszeDrzewa = pomiarManager.getTreesForHeightMeasurement(
+      allTrees: allTrees,
+      typDrzewa: 'zywe', // The 'thickest' rule usually applies to live trees
+      selectedWarstwa: selectedWarstwa,
+      defaultGatunekWysokosc: 'Najgrubsze',
+      defaultWiekWysokosc: 0,
+    );
+
+    for (var tree in najgrubszeDrzewa) {
+      if (tree.wysRequired && tree.wysokosc <= 0) {
+        return false; // Returns false immediately if any required tree lacks a height measurement
+      }
+    }
+
+    return true; // Returns true if all required trees have their height measured or if none were required
+  }
+
+
+
 
   // --- 1. LOGICAL CHECKS ---
 
@@ -40,95 +212,23 @@ class KontrolaPowierzchni {
     return true;
   }
 
-  /// Groups trees and checks if for each group (Gatunek + Wiek),
-  /// the required trees (based on the pomiar_wysokosci algorithm) have their height measured.
-  static Map<String, bool> checkWysokosciDlaGrup(List<DrzewoModel> drzewa) {
-    Map<String, List<DrzewoModel>> groupedTrees = {};
-    Map<String, bool> wynikiGrup = {};
 
-    // 1. Group the trees
-    for (var drzewo in drzewa) {
-      final String key = '${drzewo.gatunek} ${drzewo.wiek}';
-      if (!groupedTrees.containsKey(key)) {
-        groupedTrees[key] = [];
-      }
-      groupedTrees[key]!.add(drzewo);
-    }
-
-    // 2. Analyze each group
-    groupedTrees.forEach((grupaKey, treesInGroup) {
-      List<DrzewoModel> sortedByOdl = List.from(treesInGroup);
-      sortedByOdl.sort((a, b) => a.odl.compareTo(b.odl));
-
-      int end = sortedByOdl.length < 6 ? sortedByOdl.length : 6;
-      List<DrzewoModel> closestSubgroup = sortedByOdl.sublist(0, end);
-
-      closestSubgroup.sort((a, b) => a.srednica.compareTo(b.srednica));
-
-      bool wszystkieWymaganeZmierzone = true;
-      int n = closestSubgroup.length;
-
-      if (n <= 2) {
-        for (var tree in closestSubgroup) {
-          if (tree.wysokosc <= 0) wszystkieWymaganeZmierzone = false;
-        }
-      } else {
-        int midRight = n ~/ 2;
-        int midLeft = midRight - 1;
-
-        if (closestSubgroup[midLeft].wysokosc <= 0) wszystkieWymaganeZmierzone = false;
-        if (closestSubgroup[midRight].wysokosc <= 0) wszystkieWymaganeZmierzone = false;
-      }
-
-      wynikiGrup[grupaKey] = wszystkieWymaganeZmierzone;
-    });
-
-    return wynikiGrup;
-  }
-
-  static bool checkWysokosciDlaNajgrubszych(List<DrzewoModel> drzewa) {
-    if (drzewa.isEmpty) return true;
-
-    // 1. Create a copy of the list and sort by diameter (srednica) in DESCENDING order
-    List<DrzewoModel> sortedByDiameterDesc = List.from(drzewa);
-    sortedByDiameterDesc.sort((a, b) => b.srednica.compareTo(a.srednica));
-
-    // 2. Determine the limit (maximum 4 trees, or fewer if the list is smaller)
-    int limit = sortedByDiameterDesc.length < 4 ? sortedByDiameterDesc.length : 4;
-
-    // 3. Check if all trees in this top group have a height > 0
-    for (int i = 0; i < limit; i++) {
-      if (sortedByDiameterDesc[i].wysokosc <= 0) {
-        return false; // Found a thickest tree missing its height
-      }
-    }
-
-    return true; // All required thickest trees have their height measured
-  }
 
   // --- 2. UI DISPLAY METHOD ---
 
   /// Builds the table view for the "Kontrola" tab.
-  static Widget buildKontrolaTable(List<DrzewoModel> drzewa) {
+  static Widget buildKontrolaTable({
+    required PowierzchniaModel powierzchnia,
+    required String selectedWarstwa,
+  }) {
+    // Execute the separated logic
+    final wyniki = wykonajTestyKontrolne(
+      powierzchnia: powierzchnia,
+      selectedWarstwa: selectedWarstwa,
+    );
 
-    // --- NEW: Split the trees into living and dead ---
-    final List<DrzewoModel> zywe = drzewa.where((d) => d.typ == 'zywe').toList();
-    final List<DrzewoModel> martwe = drzewa.where((d) => d.typ == 'martwe').toList();
-
-    // Run the logical checks
-    bool testSrednice = checkWszystkieMajaSrednice(drzewa); // We check diameter for ALL trees
-    bool testAzymut = checkWszystkieMajaAzymut(drzewa);     // EXTRA CHECK: Azimuth
-    bool testOdl = checkWszystkieMajaOdl(drzewa);           // EXTRA CHECK: Distance
-
-    // --- EXTRA CHECK: Check height for the 4 thickest trees overall ---
-    bool testNajgrubsze = checkWysokosciDlaNajgrubszych(drzewa);
-
-    // Check heights separately for living and dead groups
-    Map<String, bool> testyWysokosciZywe = checkWysokosciDlaGrup(zywe);
-    Map<String, bool> testyWysokosciMartwe = checkWysokosciDlaGrup(martwe);
-
+    // --- 6. Build UI ---
     return Padding(
-      // Reduces left/right padding to 4.0 while keeping top/bottom at 16.0
       padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 16.0),
       child: Container(
         decoration: BoxDecoration(
@@ -162,37 +262,37 @@ class KontrolaPowierzchni {
               ),
             ),
 
-            // --- CHECK 1: Średnica (General check) ---
+            // --- CHECK 1: Średnica ---
             _buildKontrolaRow(
               nazwaKontroli: 'Wszystkie drzewa mają średnicę',
-              wynik: testSrednice,
+              wynik: wyniki.testSrednice,
             ),
             const Divider(height: 1, color: Colors.black12),
 
-            // --- CHECK 1A: Azymut (General check) ---
+            // --- CHECK 1A: Azymut ---
             _buildKontrolaRow(
               nazwaKontroli: 'Wszystkie drzewa mają azymut',
-              wynik: testAzymut,
+              wynik: wyniki.testAzymut,
             ),
             const Divider(height: 1, color: Colors.black12),
 
-            // --- CHECK 1B: Odległość (General check) ---
+            // --- CHECK 1B: Odległość ---
             _buildKontrolaRow(
               nazwaKontroli: 'Wszystkie drzewa mają odległość',
-              wynik: testOdl,
+              wynik: wyniki.testOdl,
             ),
             const Divider(height: 1, color: Colors.black12),
 
-            // --- CHECK 2: Najgrubsze (General check) ---
+            // --- CHECK 2: Najgrubsze ---
             _buildKontrolaRow(
               nazwaKontroli: '4 najgrubsze drzewa mają wysokość',
-              wynik: testNajgrubsze,
+              wynik: wyniki.testNajgrubsze,
             ),
 
             // --- SECTION: DRZEWA ŻYWE ---
-            if (testyWysokosciZywe.isNotEmpty) ...[
+            if (wyniki.testyWysokosciZywe.isNotEmpty) ...[
               _buildSectionHeader('Drzewa żywe'),
-              ...testyWysokosciZywe.entries.map((entry) {
+              ...wyniki.testyWysokosciZywe.entries.map((entry) {
                 return Column(
                   children: [
                     _buildKontrolaRow(
@@ -206,9 +306,9 @@ class KontrolaPowierzchni {
             ],
 
             // --- SECTION: DRZEWA MARTWE ---
-            if (testyWysokosciMartwe.isNotEmpty) ...[
+            if (wyniki.testyWysokosciMartwe.isNotEmpty) ...[
               _buildSectionHeader('Drzewa martwe'),
-              ...testyWysokosciMartwe.entries.map((entry) {
+              ...wyniki.testyWysokosciMartwe.entries.map((entry) {
                 return Column(
                   children: [
                     _buildKontrolaRow(

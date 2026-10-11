@@ -528,7 +528,6 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     }
 
     // --- If a specific layer is selected, or only 1 layer exists ---
-    // Show "Najgrubsze" only if there is just 1 layer total
     if (!hasMultipleLayers) {
       chips.add(
         ChoiceChip(
@@ -561,14 +560,34 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
         return widget.powierzchnia.drzewa.any((tree) =>
         tree.warstwa.toString() == _selectedWarstwa &&
             tree.gatunek == gatunek.nazwa &&
-            tree.wiek == gatunek.wiek
-        );
+            tree.wiek == gatunek.wiek);
       }).toList();
+    }
+
+    // --- AUTO-ACTIVATION LOGIC ---
+    // If multiple layers exist and the current selection is "Najgrubsze" (or missing),
+    // automatically schedule a state update to select the first valid species in this layer.
+    if (hasMultipleLayers && availableGatunki.isNotEmpty) {
+      bool isCurrentSelectionValid = availableGatunki.any((g) =>
+      g.nazwa == _defaultGatunekWysokosc && g.wiek == _defaultWiekWysokosc);
+
+      if (_defaultGatunekWysokosc == 'Najgrubsze' || !isCurrentSelectionValid) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _defaultGatunekWysokosc = availableGatunki.first.nazwa;
+              _defaultWiekWysokosc = availableGatunki.first.wiek;
+            });
+          }
+        });
+      }
     }
 
     // Map the filtered species to ChoiceChips
     for (var gatunek in availableGatunki) {
-      final bool isSelected = _defaultGatunekWysokosc == gatunek.nazwa && _defaultWiekWysokosc == gatunek.wiek;
+      // Dynamically evaluate selection status (incorporating the fallback just in case the callback hasn't fired yet)
+      final bool isSelected = (_defaultGatunekWysokosc == gatunek.nazwa && _defaultWiekWysokosc == gatunek.wiek) ||
+          (_defaultGatunekWysokosc == 'Najgrubsze' && gatunek == availableGatunki.first);
 
       chips.add(
         ChoiceChip(
@@ -643,20 +662,18 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                 // Tab 1: Drzewa żywe
                 _currentDrzewa.isEmpty
                     ? _buildEmptyState('Brak żywych drzew. Kliknij "+ dodaj wiele" lub "+ drzewo".')
-                    : _buildTreeTabContent(_currentDrzewa),
+                    : _buildTreeTabContent('zywe'),
 
                 // Tab 2: Drzewa martwe
                 _currentDrzewaMartwe.isEmpty
                     ? _buildEmptyState('Brak martwych drzew.')
-                    : _buildTreeTabContent(_currentDrzewaMartwe),
+                    : _buildTreeTabContent('martwe'),
 
                 // Tab 3: Kontrola
                 SingleChildScrollView(
-                  // Only pass trees that match the currently selected layer
                   child: KontrolaPowierzchni.buildKontrolaTable(
-                    widget.powierzchnia.drzewa
-                        .where((tree) => tree.warstwa == _selectedWarstwa)
-                        .toList(),
+                    powierzchnia: widget.powierzchnia,
+                    selectedWarstwa: _selectedWarstwa,
                   ),
                 ),
               ],
@@ -678,42 +695,30 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   }
 
 // 1. Unify the widget to accept a list of trees
-  Widget _buildTreeTabContent(List<DrzewoModel> treesList) {
+  Widget _buildTreeTabContent(String typDrzewa) {
+    final pomiarManager = PomiarWysokosci(powierzchnia: widget.powierzchnia);
 
-    // --- CHANGED: Only reset the trees belonging to this specific Tab! ---
-    // Instead of widget.powierzchnia.drzewa, we use treesList.
-    for (var tree in treesList) {
-      tree.wysRequired = false;
-    }
+    final List<DrzewoModel> finalTrees = pomiarManager.getPreparedTreesForBuilder(
+      allTrees: widget.powierzchnia.drzewa,
+      typDrzewa: typDrzewa,
+      selectedWarstwa: _selectedWarstwa,
+      isWysokoscPomiarActive: _isWysokoscPomiarActive,
+      defaultGatunekWysokosc: _defaultGatunekWysokosc,
+      defaultWiekWysokosc: _defaultWiekWysokosc,
+    );
 
-    // --- 2. Filter the list ---
-    final List<DrzewoModel> filteredTrees = treesList.where((tree) {
-      // If 'Wszyst.' is selected, match all layers; otherwise, match the specific layer
-      bool matchesWarstwa = (_selectedWarstwa == 'Wszyst.') ||
-          (tree.warstwa.toString() == _selectedWarstwa || tree.warstwa.toString().isEmpty);
-
-      // Optional: Filter by type (e.g., only 'zywe' or 'martwe' depending on your toggle/state)
-      // Replace `_selectedTyp` with your actual variable if you have one, or hardcode the condition if needed.
-      // bool matchesTyp = tree.typ == 'zywe' || tree.typ == 'martwe';
-
-      bool matchesGatunek = true;
-      if (_isWysokoscPomiarActive && _defaultGatunekWysokosc != 'Najgrubsze') {
-        matchesGatunek = (tree.gatunek == _defaultGatunekWysokosc && tree.wiek == _defaultWiekWysokosc);
-      }
-
-      return matchesWarstwa && matchesGatunek; // && matchesTyp (if you need type filtering)
-    }).toList();
-
-    // --- 3. Apply the flags ONLY if the mode is active ---
-    if (_isWysokoscPomiarActive) {
-      final pomiarManager = PomiarWysokosci(powierzchnia: widget.powierzchnia);
-      pomiarManager.assignTreesForHeight(filteredTrees, _defaultGatunekWysokosc);
+    if (finalTrees.isEmpty) {
+      return _buildEmptyState(
+          typDrzewa == 'zywe'
+              ? 'Brak żywych drzew. Kliknij "+ dodaj wiele" lub "+ drzewo".'
+              : 'Brak martwych drzew.'
+      );
     }
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       children: [
-        _buildDrzewaTable(filteredTrees),
+        _buildDrzewaTable(finalTrees),
       ],
     );
   }
