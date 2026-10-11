@@ -4,6 +4,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive_io.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:io';
 
 // Ensure these imports match your project structure
 import '../screens/powierzchnia_screen/powierzchnia_model.dart';
@@ -242,7 +244,9 @@ class DataHandler {
   }
   // --- EXPORTING METHOD ---
 
-  Future<bool> exportPowierzchnieJson() async {
+
+
+  Future<bool> exportPowierzchnieJson(String initials) async {
     try {
       // Ensure memory lists are saved to file before exporting
       await savePowierzchnie();
@@ -254,25 +258,33 @@ class DataHandler {
         return false;
       }
 
-      final downloadsDir = Directory('/storage/emulated/0/Download');
-      if (!await downloadsDir.exists()) {
-        await downloadsDir.create(recursive: true);
-      }
-
-      // Generate a unique timestamp string (e.g., 2026-09-29_17-09-27)
+      // Generate a unique timestamp string
       final String timestamp = DateTime.now()
           .toIso8601String()
           .replaceAll(':', '-')
           .split('.')
-          .first; // YYYY-MM-DDTHH-mm-ss
+          .first;
 
-      final targetFile = File('${downloadsDir.path}/eksport_powierzchnie_$timestamp.json');
+      // Create a nicely named copy in the same internal directory for sharing
+      final targetFile = File('${internalFile.parent.path}/eksport_powierzchnie_${timestamp}_$initials.json');
       await internalFile.copy(targetFile.path);
 
-      debugPrint('Wyeksportowano do: ${targetFile.path}');
-      return true;
+      // Trigger the native share sheet
+      final result = await Share.shareXFiles(
+        [XFile(targetFile.path)],
+        text: 'Dane powierzchni - taksator: $initials',
+      );
+
+      // Clean up the temporary nicely-named file after the share sheet closes
+      if (await targetFile.exists()) {
+        await targetFile.delete();
+      }
+
+      // Check if the user successfully shared the file (requires newer share_plus versions)
+      return result.status == ShareResultStatus.success;
+
     } catch (e) {
-      debugPrint('Błąd podczas eksportu: $e');
+      debugPrint('Błąd podczas eksportu/udostępniania: $e');
       return false;
     }
   }

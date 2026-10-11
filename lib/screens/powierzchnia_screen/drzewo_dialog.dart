@@ -344,25 +344,6 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
                 SizedBox(height: verticalSpacing),
 
                 TextField(
-                  controller: _wysokoscController,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  inputFormatters: [AutoDecimalFormatter(decimalDigits: 1)],
-                  onChanged: (val) {
-                    setState(() {
-                      wysokoscError = _checkWysokoscLimit(val);
-                    });
-                  },
-                  decoration: InputDecoration(
-                    labelText: 'Wysokość (m)',
-                    errorText: wysokoscError,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-
-                SizedBox(height: verticalSpacing),
-
-                TextField(
                   controller: _azymutController, // Make sure this is initialized as TextEditingController(text: '')
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.next,
@@ -402,6 +383,30 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
+
+                SizedBox(height: verticalSpacing),
+
+                TextField(
+                  controller: _wysokoscController,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.next,
+                  inputFormatters: [AutoDecimalFormatter(decimalDigits: 1)],
+                  onChanged: (val) {
+                    setState(() {
+                      wysokoscError = _checkWysokoscLimit(val);
+                    });
+                  },
+                  decoration: InputDecoration(
+                    labelText: 'Wysokość (m)',
+                    errorText: wysokoscError,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+
+
+
+
+
               ],
             ),
           ),

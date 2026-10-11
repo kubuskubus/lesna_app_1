@@ -95,6 +95,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     if (widget.powierzchnia.warstwa.isNotEmpty) {
       _selectedWarstwa = widget.powierzchnia.warstwa.first;
     }
+    _tabController.addListener(_handleTabSelection);
   }
 
 
@@ -110,6 +111,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     _treeSubscription?.cancel();
     _srednicaFocusNode.dispose(); // Don't forget to dispose!
     // Add this line
+    _tabController.removeListener(_handleTabSelection);
     _tabController.dispose();
     super.dispose();
   }
@@ -134,6 +136,15 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
         ),
       ),
     );
+  }
+
+  // Extract the listener logic into a dedicated method to keep it clean
+  void _handleTabSelection() {
+    if (!_tabController.indexIsChanging) {
+      // This triggers a rebuild whenever the user swipes or taps a new tab,
+      // ensuring _buildGatunekChips runs again and updates its logic.
+      setState(() {});
+    }
   }
 
   void _inputNachylenieValue() {
@@ -241,50 +252,48 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     final int nachylenie = widget.powierzchnia.nachylenie;
 
     setState(() {
-      switch (nachylenie) {
-        case 0:
-          _maxRadiusSurface = 11.28; //[cite: 3]
-          break;
-        case 5:
-          _maxRadiusSurface = 11.30; //[cite: 3]
-          break;
-        case 10:
-          _maxRadiusSurface = 11.37; //[cite: 3]
-          break;
-        case 15:
-          _maxRadiusSurface = 11.48; //[cite: 3]
-          break;
-        case 20:
-          _maxRadiusSurface = 11.64; //[cite: 3]
-          break;
-        case 25:
-          _maxRadiusSurface = 11.85; //[cite: 3]
-          break;
-        case 30:
-          _maxRadiusSurface = 12.12; //[cite: 3]
-          break;
-        case 35:
-          _maxRadiusSurface = 12.46; //[cite: 3]
-          break;
-        default:
-          _maxRadiusSurface = 11.28; // Fallback
-      }
+      if (nachylenie == 100) {
+        _maxRadiusSurface = 11.28; // Default fallback for empty state
+      } else {
+        // Integer division by 5 rounds down to the nearest multiple of 5
+        // (e.g., 0-4 becomes 0, 5-9 becomes 5, 12 becomes 10)
+        final int baseNachylenie = (nachylenie ~/ 5) * 5;
 
-      // IMPORTANT: If you want to save this to your JSON file, you must add
-      // maxRadiusSurface as a property in your PowierzchniaModel class.
-      // Uncomment the line below once added to your model:
-      // widget.powierzchnia.maxRadiusSurface = _maxRadiusSurface;
+        switch (baseNachylenie) {
+          case 0:
+            _maxRadiusSurface = 11.28;
+            break;
+          case 5:
+            _maxRadiusSurface = 11.30;
+            break;
+          case 10:
+            _maxRadiusSurface = 11.37;
+            break;
+          case 15:
+            _maxRadiusSurface = 11.48;
+            break;
+          case 20:
+            _maxRadiusSurface = 11.64;
+            break;
+          case 25:
+            _maxRadiusSurface = 11.85;
+            break;
+          case 30:
+            _maxRadiusSurface = 12.12;
+            break;
+          default:
+          // Applies to 35 and any value higher than 35
+            _maxRadiusSurface = 12.46;
+        }
+      }
     });
 
-    // Triggers the file save via your existing callback mechanism
     if (widget.onUpdate != null) {
       widget.onUpdate!();
     }
   }
 
   AppBar _buildAppBar(BuildContext context) {
-    final List<int> availableValues = [0, 5, 10, 15, 20, 25, 30, 35];
-    // Moved outside of the children list to fix the syntax error
     final bool showWszystkieOption = widget.powierzchnia.warstwa.length > 1;
 
     return AppBar(
@@ -296,9 +305,10 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
           children: [
             const SizedBox(width: 4),
 
-            // --- Dropdown for slope (nachylenie) ---
+            // --- Text Input for slope (nachylenie) ---
             Container(
               height: 36,
+              width: 75, // Fixed width to prevent the field from expanding infinitely
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               decoration: BoxDecoration(
                 color: Colors.orange.shade100,
@@ -309,36 +319,34 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                 children: [
                   const Icon(Icons.terrain, size: 16, color: Colors.black87),
                   const SizedBox(width: 4),
-                  DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      isDense: true,
-                      value: widget.powierzchnia.nachylenie == 100
-                          ? null
-                          : widget.powierzchnia.nachylenie,
-                      icon: const Icon(Icons.arrow_drop_down, color: Colors.black87, size: 20),
-                      hint: const Text(
-                        '-',
-                        style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
+                  Expanded(
+                    child: TextFormField(
+                      initialValue: widget.powierzchnia.nachylenie == 100
+                          ? ''
+                          : widget.powierzchnia.nachylenie.toString(),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly], // Only allows integers
                       style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
-                      items: availableValues.map((int value) {
-                        return DropdownMenuItem<int>(
-                          value: value,
-                          child: Text('$value°'),
-                        );
-                      }).toList(),
-                      onChanged: (int? newValue) {
-                        if (newValue != null) {
-                          setState(() {
-                            widget.powierzchnia.nachylenie = newValue;
-                          });
-                          if (widget.onUpdate != null) {
-                            widget.onUpdate!();
-                          }
+                      decoration: const InputDecoration(
+                        hintText: '-',
+                        hintStyle: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      onChanged: (String val) {
+                        int? parsed = int.tryParse(val);
+                        if (parsed != null) {
+                          widget.powierzchnia.nachylenie = parsed;
+                          _setMaxPromienPowierzchni();
+                        } else if (val.isEmpty) {
+                          widget.powierzchnia.nachylenie = 100; // Reset to empty state
+                          _setMaxPromienPowierzchni();
                         }
                       },
                     ),
                   ),
+                  const Text('°', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
                 ],
               ),
             ),
@@ -497,97 +505,107 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   List<Widget> _buildGatunekChips() {
     final bool hasMultipleLayers = widget.powierzchnia.warstwa.length > 1;
     final bool isAllLayersSelected = _selectedWarstwa == 'Wszyst.';
+    final bool isMartweTabActive = _tabController.index == 1;
+    final String activeTypDrzewa = isMartweTabActive ? 'martwe' : 'zywe';
 
     List<Widget> chips = [];
 
-    // --- RULE: If "Wszyst." is selected, ONLY show "Najgrubsze" ---
+    // --- RULE 1: If "Wszyst." is selected, ONLY show "Najgrubsze" ---
     if (isAllLayersSelected) {
-      chips.add(
-        ChoiceChip(
-          label: const Text('Najgrubsze'),
-          selected: _defaultGatunekWysokosc == 'Najgrubsze',
-          selectedColor: Colors.blue.shade100,
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(
-              color: _defaultGatunekWysokosc == 'Najgrubsze' ? Colors.blue : Colors.grey.shade300,
+      if (!isMartweTabActive) {
+        chips.add(
+          ChoiceChip(
+            label: const Text('Najgrubsze'),
+            selected: _defaultGatunekWysokosc == 'Najgrubsze',
+            selectedColor: Colors.blue.shade100,
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(
+                color: _defaultGatunekWysokosc == 'Najgrubsze' ? Colors.blue : Colors.grey.shade300,
+              ),
             ),
+            onSelected: (bool selected) {
+              if (selected) {
+                setState(() {
+                  _defaultGatunekWysokosc = 'Najgrubsze';
+                  _defaultWiekWysokosc = 0;
+                });
+              }
+            },
           ),
-          onSelected: (bool selected) {
-            if (selected) {
-              setState(() {
-                _defaultGatunekWysokosc = 'Najgrubsze';
-                _defaultWiekWysokosc = 0;
-              });
-            }
-          },
-        ),
-      );
-      return chips; // Exit early so no species chips are added
-    }
-
-    // --- If a specific layer is selected, or only 1 layer exists ---
-    if (!hasMultipleLayers) {
-      chips.add(
-        ChoiceChip(
-          label: const Text('Najgrubsze'),
-          selected: _defaultGatunekWysokosc == 'Najgrubsze',
-          selectedColor: Colors.blue.shade100,
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(
-              color: _defaultGatunekWysokosc == 'Najgrubsze' ? Colors.blue : Colors.grey.shade300,
-            ),
-          ),
-          onSelected: (bool selected) {
-            if (selected) {
-              setState(() {
-                _defaultGatunekWysokosc = 'Najgrubsze';
-                _defaultWiekWysokosc = 0;
-              });
-            }
-          },
-        ),
-      );
-    }
-
-    // Filter species strictly belonging to the chosen single layer
-    var availableGatunki = _getGatunkiFromExistingTrees();
-    if (hasMultipleLayers) {
-      availableGatunki = availableGatunki.where((gatunek) {
-        return widget.powierzchnia.drzewa.any((tree) =>
-        tree.warstwa.toString() == _selectedWarstwa &&
-            tree.gatunek == gatunek.nazwa &&
-            tree.wiek == gatunek.wiek);
-      }).toList();
-    }
-
-    // --- AUTO-ACTIVATION LOGIC ---
-    // If multiple layers exist and the current selection is "Najgrubsze" (or missing),
-    // automatically schedule a state update to select the first valid species in this layer.
-    if (hasMultipleLayers && availableGatunki.isNotEmpty) {
-      bool isCurrentSelectionValid = availableGatunki.any((g) =>
-      g.nazwa == _defaultGatunekWysokosc && g.wiek == _defaultWiekWysokosc);
-
-      if (_defaultGatunekWysokosc == 'Najgrubsze' || !isCurrentSelectionValid) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            setState(() {
-              _defaultGatunekWysokosc = availableGatunki.first.nazwa;
-              _defaultWiekWysokosc = availableGatunki.first.wiek;
-            });
-          }
-        });
+        );
       }
+      return chips; // Exit early
     }
 
-    // Map the filtered species to ChoiceChips
+    // Define when "Najgrubsze" is permitted (1 layer AND not on dead trees tab)
+    bool isNajgrubszeAllowed = !hasMultipleLayers && !isMartweTabActive;
+
+    // --- RULE 2: Show "Najgrubsze" if permitted ---
+    if (isNajgrubszeAllowed) {
+      chips.add(
+        ChoiceChip(
+          label: const Text('Najgrubsze'),
+          selected: _defaultGatunekWysokosc == 'Najgrubsze',
+          selectedColor: Colors.blue.shade100,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(
+              color: _defaultGatunekWysokosc == 'Najgrubsze' ? Colors.blue : Colors.grey.shade300,
+            ),
+          ),
+          onSelected: (bool selected) {
+            if (selected) {
+              setState(() {
+                _defaultGatunekWysokosc = 'Najgrubsze';
+                _defaultWiekWysokosc = 0;
+              });
+            }
+          },
+        ),
+      );
+    }
+
+    // --- RULE 3: Filter species by layer AND tree type (live/dead) ---
+    var availableGatunki = _getGatunkiFromExistingTrees();
+
+    availableGatunki = availableGatunki.where((gatunek) {
+      return widget.powierzchnia.drzewa.any((tree) {
+        bool matchesWarstwa = tree.warstwa.toString() == _selectedWarstwa;
+        bool matchesTyp = tree.typ == activeTypDrzewa;
+        bool matchesGatunek = tree.gatunek == gatunek.nazwa && tree.wiek == gatunek.wiek;
+
+        return matchesWarstwa && matchesTyp && matchesGatunek;
+      });
+    }).toList();
+
+    // --- RULE 4: AUTO-ACTIVATION LOGIC ---
+    // The selection is valid if it's either an existing species OR a permitted "Najgrubsze"
+    bool isCurrentSelectionValid = (_defaultGatunekWysokosc == 'Najgrubsze' && isNajgrubszeAllowed) ||
+        availableGatunki.any((g) => g.nazwa == _defaultGatunekWysokosc && g.wiek == _defaultWiekWysokosc);
+
+    if (availableGatunki.isNotEmpty && !isCurrentSelectionValid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _defaultGatunekWysokosc = availableGatunki.first.nazwa;
+            _defaultWiekWysokosc = availableGatunki.first.wiek;
+          });
+        }
+      });
+    }
+
+    // --- RULE 5: Map species to chips ---
     for (var gatunek in availableGatunki) {
-      // Dynamically evaluate selection status (incorporating the fallback just in case the callback hasn't fired yet)
-      final bool isSelected = (_defaultGatunekWysokosc == gatunek.nazwa && _defaultWiekWysokosc == gatunek.wiek) ||
-          (_defaultGatunekWysokosc == 'Najgrubsze' && gatunek == availableGatunki.first);
+      // Standard selection match
+      bool isSelected = _defaultGatunekWysokosc == gatunek.nazwa && _defaultWiekWysokosc == gatunek.wiek;
+
+      // Anti-flicker: Highlight the first chip provisionally while waiting for the post-frame callback
+      if (!isCurrentSelectionValid && gatunek == availableGatunki.first) {
+        isSelected = true;
+      }
 
       chips.add(
         ChoiceChip(
@@ -674,6 +692,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                   child: KontrolaPowierzchni.buildKontrolaTable(
                     powierzchnia: widget.powierzchnia,
                     selectedWarstwa: _selectedWarstwa,
+                    maxRadius: _maxRadiusSurface, // <-- ADD THIS
                   ),
                 ),
               ],
@@ -716,7 +735,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     }
 
     return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      // Increased bottom padding to 100.0 so the last row is always visible when scrolled to the bottom
+      padding: const EdgeInsets.only(top: 8.0, bottom: 100.0),
       children: [
         _buildDrzewaTable(finalTrees),
       ],
@@ -727,8 +747,22 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   Widget _buildDrzewaTable(List<DrzewoModel> drzewaList) {
     List<DrzewoModel> displayList = List.from(drzewaList);
 
+    // Determine the correct sort column and direction when Height Measurement is active
+    int activeSortColumnIndex = 2; // Default to 'Odl.'
+    bool activeSortAscending = true;
+
     if (_isWysokoscPomiarActive) {
-      displayList.sort((a, b) => a.odl.compareTo(b.odl));
+      if (_defaultGatunekWysokosc == 'Najgrubsze') {
+        // Sort by Średnica (Descending) for "Najgrubsze"
+        displayList.sort((a, b) => b.srednica.compareTo(a.srednica));
+        activeSortColumnIndex = 3; // Column index for 'Śred.'
+        activeSortAscending = false;
+      } else {
+        // Sort by Odległość (Ascending) for proportional groups
+        displayList.sort((a, b) => a.odl.compareTo(b.odl));
+        activeSortColumnIndex = 2; // Column index for 'Odl.'
+        activeSortAscending = true;
+      }
     }
 
     // Adjusted fixed widths. The FittedBox will handle scaling them down to fit the screen.
@@ -740,23 +774,21 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     final double colAkcjeWidth = 35.0;
 
     return Container(
-      width: double.infinity, // Forces the container to take all available width
+      width: double.infinity,
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(8),
         color: Colors.white,
       ),
-      // --- THIS IS THE FIX: Scales the entire table down if it overflows ---
       child: FittedBox(
         fit: BoxFit.scaleDown,
         alignment: Alignment.topCenter,
         child: DataTable(
-          // Keep spacing tight to minimize how much it needs to scale
           columnSpacing: 12.0,
           horizontalMargin: 12.0,
-
-          sortColumnIndex: _isWysokoscPomiarActive ? 2 : _sortColumnIndex,
-          sortAscending: _isWysokoscPomiarActive ? true : _sortAscending,
+          // Apply the dynamic sorting visuals
+          sortColumnIndex: _isWysokoscPomiarActive ? activeSortColumnIndex : _sortColumnIndex,
+          sortAscending: _isWysokoscPomiarActive ? activeSortAscending : _sortAscending,
           headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
           dataRowMinHeight: 40,
           dataRowMaxHeight: 48,
@@ -881,7 +913,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     }
 
     // --- NEW: Block adding a tree if "Wszyst." is selected ---
-    if (_selectedWarstwa == 'Wszyst.') {
+    if (_selectedWarstwa == 'Wszyst.' && mode != DialogMode.edit) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Wybierz konkretną warstwę przed dodaniem drzewa.'),
@@ -1056,6 +1088,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     });
     print(text);
   }
+
 
   // --- HELPER FUNCTIONS ---
 

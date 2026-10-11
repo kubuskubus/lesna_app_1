@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lesna_app_1/screens/powierzchnia_screen/info_screen.dart';
+import 'package:lesna_app_1/screens/powierzchnia_screen/kontrola_powierzchni.dart';
 import 'package:lesna_app_1/screens/powierzchnia_screen/powierzchnia_model.dart';
 import 'connector/bluetooth_device.dart';
 import 'screens/powierzchnia_screen/powierzchnia_details.dart';
@@ -69,6 +70,39 @@ class _AppMainScreenState extends State<AppMainScreen> {
         _filteredNumPp = _allNumPp; // Initialize the filtered list
       });
     }
+  }
+
+  bool _isSurfaceCompleted(PowierzchniaModel powierzchnia) {
+    if (powierzchnia.drzewa.isEmpty) return false;
+
+    // Run the validation tests for the entire surface
+    // Pass your default maxRadius (11.28) or retrieve it dynamically if it's stored in the model
+    final wyniki = KontrolaPowierzchni.wykonajTestyKontrolne(
+      powierzchnia: powierzchnia,
+      selectedWarstwa: 'Wszyst.',
+      maxRadius: 11.28,
+    );
+
+    // Check general tests
+    if (!wyniki.testSrednice ||
+        !wyniki.testAzymut ||
+        !wyniki.testOdl ||
+        !wyniki.testPromien ||
+        !wyniki.testNajgrubsze) {
+      return false;
+    }
+
+    // Check proportional group requirements for live trees
+    for (bool result in wyniki.testyWysokosciZywe.values) {
+      if (!result) return false;
+    }
+
+    // Check proportional group requirements for dead trees
+    for (bool result in wyniki.testyWysokosciMartwe.values) {
+      if (!result) return false;
+    }
+
+    return true; // All tests passed
   }
 
   // Reads all three files from memory and updates the UI
@@ -188,23 +222,56 @@ class _AppMainScreenState extends State<AppMainScreen> {
               ),
               TextButton(
                 onPressed: () async {
-                  bool success = await _dataHandler.exportPowierzchnieJson();
+                  String? initials = await showDialog<String>(
+                    context: context,
+                    builder: (BuildContext context) {
+                      TextEditingController initialsController = TextEditingController();
+                      return AlertDialog(
+                        title: const Text('Udostępnij JSON'),
+                        content: TextField(
+                          controller: initialsController,
+                          textCapitalization: TextCapitalization.characters,
+                          decoration: InputDecoration(
+                            labelText: 'Podaj inicjały taksatora',
+                            hintText: 'np. JL',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(null),
+                            child: const Text('Anuluj', style: TextStyle(color: Colors.grey)),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(context).pop(initialsController.text.trim());
+                            },
+                            child: const Text('Udostępnij'),
+                          ),
+                        ],
+                      );
+                    },
+                  );
 
-                  if (context.mounted) {
+                  if (initials == null || initials.isEmpty) {
+                    return;
+                  }
+
+                  bool success = await _dataHandler.exportPowierzchnieJson(initials);
+
+                  if (context.mounted && !success) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(success
-                            ? 'Plik JSON został pomyślnie wyeksportowany!'
-                            : 'Anulowano eksport lub plik nie istnieje.'),
+                      const SnackBar(
+                        content: Text('Anulowano udostępnianie lub wystąpił błąd.'),
                       ),
                     );
                   }
                 },
                 child: const Text(
-                  'Eksport JSON',
+                  'Udostępnij JSON',
                   style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold),
                 ),
-              ),
+              )
             ],
           ),
         ),
@@ -374,10 +441,24 @@ class _AppMainScreenState extends State<AppMainScreen> {
 
     PowierzchniaModel? currentPowierzchnia;
     bool hasTrees = false;
+    bool isCompleted = false; // <-- NEW FLAG
 
     if (existsInMainList) {
       currentPowierzchnia = _dataHandler.powierzchnie[powIndex];
       hasTrees = currentPowierzchnia.drzewa.isNotEmpty;
+
+      // --- NEW: Evaluate completion only if it has trees ---
+      if (hasTrees) {
+        isCompleted = _isSurfaceCompleted(currentPowierzchnia);
+      }
+    }
+
+    // Determine row color based on completion status
+    Color rowColor = Colors.transparent;
+    if (isCompleted) {
+      rowColor = Colors.green.shade50;
+    } else if (hasTrees) {
+      rowColor = Colors.amber.shade50; // Work in progress
     }
 
     // Helper flag
@@ -391,7 +472,6 @@ class _AppMainScreenState extends State<AppMainScreen> {
           icon: const Icon(Icons.info_outline),
           tooltip: 'Informacje o powierzchni',
           onPressed: () {
-            // 2. Pass the specific surface for this row, not widget.powierzchnia
             if (currentPowierzchnia != null) {
               showDialog(
                 context: context,
@@ -403,7 +483,7 @@ class _AppMainScreenState extends State<AppMainScreen> {
               );
             }
           },
-        ), // <-- FIXED: Added the missing comma here
+        ),
         const SizedBox(width: 16),
         const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
       ],
@@ -412,7 +492,7 @@ class _AppMainScreenState extends State<AppMainScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.0),
       child: Material(
-        color: hasTrees ? Colors.amber.shade50 : Colors.transparent,
+        color: rowColor, // <-- APPLIED THE NEW DYNAMIC COLOR
         child: InkWell(
           onTap: () {
             if (isAdded && currentPowierzchnia != null) {
@@ -442,20 +522,17 @@ class _AppMainScreenState extends State<AppMainScreen> {
             }
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            child: Row(
-              children: [
-                // Changed flex from 2 to 1
-                Expanded(
-                  flex: 1,
-                  child: Text(numer, style: const TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                // Changed flex from 3 to 4
-                Expanded(flex: 4, child: Text(adres.isNotEmpty ? adres : '-')),
-                // Kept at flex 2
-                Expanded(flex: 2, child: actionsWidget),
-              ],
-            )
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 1,
+                    child: Text(numer, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  Expanded(flex: 4, child: Text(adres.isNotEmpty ? adres : '-')),
+                  Expanded(flex: 2, child: actionsWidget),
+                ],
+              )
           ),
         ),
       ),

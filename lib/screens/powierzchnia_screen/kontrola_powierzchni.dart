@@ -9,6 +9,7 @@ class WynikiKontroli {
   final bool testSrednice;
   final bool testAzymut;
   final bool testOdl;
+  final bool testPromien; // <-- NEW
   final bool testNajgrubsze;
   final Map<String, bool> testyWysokosciZywe;
   final Map<String, bool> testyWysokosciMartwe;
@@ -17,6 +18,7 @@ class WynikiKontroli {
     required this.testSrednice,
     required this.testAzymut,
     required this.testOdl,
+    required this.testPromien, // <-- NEW
     required this.testNajgrubsze,
     required this.testyWysokosciZywe,
     required this.testyWysokosciMartwe,
@@ -32,6 +34,7 @@ class KontrolaPowierzchni {
   static WynikiKontroli wykonajTestyKontrolne({
     required PowierzchniaModel powierzchnia,
     required String selectedWarstwa,
+    required double maxRadius, // <-- YOU NEED TO ADD THIS LINE HERE
   }) {
     final List<DrzewoModel> allTrees = powierzchnia.drzewa;
 
@@ -46,6 +49,7 @@ class KontrolaPowierzchni {
     bool testSrednice = checkWszystkieMajaSrednice(treesInLayer);
     bool testAzymut = checkWszystkieMajaAzymut(treesInLayer);
     bool testOdl = checkWszystkieMajaOdl(treesInLayer);
+    bool testPromien = checkWszystkieWPromieniu(treesInLayer, maxRadius); // <-- NEW CHECK
 
     // --- 2. Save the original state of the wysRequired flags ---
     Map<DrzewoModel, bool> originalFlags = {
@@ -90,6 +94,7 @@ class KontrolaPowierzchni {
       testSrednice: testSrednice,
       testAzymut: testAzymut,
       testOdl: testOdl,
+      testPromien: testPromien, // <-- NEW
       testNajgrubsze: testNajgrubsze,
       testyWysokosciZywe: testyWysokosciZywe,
       testyWysokosciMartwe: testyWysokosciMartwe,
@@ -212,6 +217,19 @@ class KontrolaPowierzchni {
     return true;
   }
 
+  /// Checks if all trees are within the maximum allowed radius
+  static bool checkWszystkieWPromieniu(List<DrzewoModel> drzewa, double maxRadius) {
+    if (drzewa.isEmpty) return false;
+    for (var tree in drzewa) {
+      // Assuming distance is stored in `tree.odl`
+      if (tree.odl > maxRadius) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+
 
 
   // --- 2. UI DISPLAY METHOD ---
@@ -220,11 +238,13 @@ class KontrolaPowierzchni {
   static Widget buildKontrolaTable({
     required PowierzchniaModel powierzchnia,
     required String selectedWarstwa,
+    required double maxRadius, // <-- NEW PARAMETER
   }) {
     // Execute the separated logic
     final wyniki = wykonajTestyKontrolne(
       powierzchnia: powierzchnia,
       selectedWarstwa: selectedWarstwa,
+      maxRadius: maxRadius, // <-- PASS IT DOWN
     );
 
     // --- 6. Build UI ---
@@ -281,6 +301,15 @@ class KontrolaPowierzchni {
               nazwaKontroli: 'Wszystkie drzewa mają odległość',
               wynik: wyniki.testOdl,
             ),
+
+            const Divider(height: 1, color: Colors.black12),
+
+            // --- NEW RADIUS CHECK UI ROW ---
+            _buildKontrolaRow(
+              nazwaKontroli: 'Drzewa mieszczą się w promieniu (${maxRadius.toStringAsFixed(2)}m)',
+              wynik: wyniki.testPromien,
+            ),
+
             const Divider(height: 1, color: Colors.black12),
 
             // --- CHECK 2: Najgrubsze ---
