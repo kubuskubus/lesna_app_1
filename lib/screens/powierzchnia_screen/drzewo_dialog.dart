@@ -402,11 +402,6 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
-
-
-
-
-
               ],
             ),
           ),
