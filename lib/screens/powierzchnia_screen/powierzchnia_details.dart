@@ -147,9 +147,21 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   // Extract the listener logic into a dedicated method to keep it clean
   void _handleTabSelection() {
     if (!_tabController.indexIsChanging) {
-      // This triggers a rebuild whenever the user swipes or taps a new tab,
-      // ensuring _buildGatunekChips runs again and updates its logic.
-      setState(() {});
+      setState(() {
+        // Check if the user switched to Gwoździe (index 2) or Kontrola (index 3)
+        if (_tabController.index == 2 || _tabController.index == 3) {
+
+          // Turn off measurement mode
+          _isMeasurementModeActive = false;
+
+          // Turn off height mode (this un-expands the Gatunek tile!)
+          _isWysokoscPomiarActive = false;
+
+          // Reset the height filters to default
+          _defaultGatunekWysokosc = 'Najgrubsze';
+          _defaultWiekWysokosc = 0;
+        }
+      });
     }
   }
 
@@ -386,13 +398,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                       );
                     }),
                   ],
-                  onChanged: (String? newValue) {
-                    if (newValue != null) {
-                      setState(() {
-                        _selectedWarstwa = newValue;
-                      });
-                    }
-                  },
+                  // --- UPDATED: Just point to the new function ---
+                  onChanged: _onWarstwaChanged,
                 ),
               ),
             ),
@@ -424,6 +431,25 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
       ),
       actions: const [],
     );
+  }
+
+  void _onWarstwaChanged(String? newValue) {
+    if (newValue != null) {
+      setState(() {
+        _selectedWarstwa = newValue;
+
+        // If "Wszystkie warstwy" is selected AND the height panel is active,
+        // force the filter back to 'Najgrubsze' (since species filtering
+        // is only allowed when a specific single layer is selected).
+        if (_selectedWarstwa == 'Wszyst.' && _isWysokoscPomiarActive) {
+          _defaultGatunekWysokosc = 'Najgrubsze';
+          _defaultWiekWysokosc = 0;
+        }
+
+        // Optional: Turn off BLE measurement mode when switching layers
+        // _isMeasurementModeActive = false;
+      });
+    }
   }
 
   Widget _buildWysokoscToggleAndGatunek() {
@@ -816,7 +842,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
       String emptyMessage;
       if (typDrzewa == 'zywe') {
         emptyMessage = 'Brak żywych drzew. Kliknij "+ dodaj wiele" lub "+ drzewo".';
-      } else if (typDrzewa == 'zywe_gwozdz') {
+      } else if (typDrzewa == 'gwozdz') {
         emptyMessage = 'Brak gwoździ. Kliknij "+ dodaj".';
       } else {
         emptyMessage = 'Brak martwych drzew.';

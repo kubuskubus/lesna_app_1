@@ -83,12 +83,17 @@ class _AppMainScreenState extends State<AppMainScreen> {
       maxRadius: 11.28,
     );
 
-    // Check general tests
+    // Check general tests for regular trees
     if (!wyniki.testSrednice ||
         !wyniki.testAzymut ||
         !wyniki.testOdl ||
         !wyniki.testPromien ||
         !wyniki.testNajgrubsze) {
+      return false;
+    }
+
+    // --- NEW: Check tests specifically for gwoździe (nails) ---
+    if (!wyniki.testGwozdzAzymut || !wyniki.testGwozdzOdl) {
       return false;
     }
 

@@ -8,6 +8,11 @@ class WynikiKontroli {
   final bool testAzymut;
   final bool testOdl;
   final bool testPromien;
+
+  // --- NEW: Added fields for gwozdz tests ---
+  final bool testGwozdzAzymut;
+  final bool testGwozdzOdl;
+
   final bool testNajgrubsze;
   final Map<String, bool> testyWysokosciZywe;
   final Map<String, bool> testyWysokosciMartwe;
@@ -17,6 +22,11 @@ class WynikiKontroli {
     required this.testAzymut,
     required this.testOdl,
     required this.testPromien,
+
+    // --- NEW: Required parameters for gwozdz ---
+    required this.testGwozdzAzymut,
+    required this.testGwozdzOdl,
+
     required this.testNajgrubsze,
     required this.testyWysokosciZywe,
     required this.testyWysokosciMartwe,
@@ -33,54 +43,71 @@ class KontrolaPowierzchni {
   }) {
     final List<DrzewoModel> allTrees = powierzchnia.drzewa;
 
-    // --- 1. Filter trees only for the selected layer (for general tests) ---
-    final List<DrzewoModel> treesInLayer = allTrees.where((tree) {
+    // --- 1. Filter all items for the selected layer ---
+    final List<DrzewoModel> allItemsInLayer = allTrees.where((tree) {
       return selectedWarstwa == 'Wszyst.' ||
           tree.warstwa.toString() == selectedWarstwa ||
           tree.warstwa.toString().isEmpty;
     }).toList();
 
-    // General tests (Diameter, Azimuth, Distance) are performed on the selected layer
-    bool testSrednice = checkWszystkieMajaSrednice(treesInLayer);
-    bool testAzymut = checkWszystkieMajaAzymut(treesInLayer);
-    bool testOdl = checkWszystkieMajaOdl(treesInLayer);
-    bool testPromien = checkWszystkieWPromieniu(treesInLayer, maxRadius);
+    // --- 1a. Separate standard trees from gwozdzie ---
+    final List<DrzewoModel> regularTreesInLayer = allItemsInLayer.where((tree) {
+      // Exclude gwozdz
+      return !(tree.typ['state'] == 'zywe' && tree.typ['type'] == 'gwozdz');
+    }).toList();
 
-    // --- 2. Save the original state of the wysRequired flags ---
+    final List<DrzewoModel> gwozdzieInLayer = allItemsInLayer.where((tree) {
+      // Include ONLY gwozdz
+      return tree.typ['state'] == 'zywe' && tree.typ['type'] == 'gwozdz';
+    }).toList();
+
+    // --- 2. General tests run ONLY on regular trees (excludes gwozdz) ---
+    bool testSrednice = checkWszystkieMajaSrednice(regularTreesInLayer);
+    bool testAzymut = checkWszystkieMajaAzymut(regularTreesInLayer);
+    bool testOdl = checkWszystkieMajaOdl(regularTreesInLayer);
+    bool testPromien = checkWszystkieWPromieniu(regularTreesInLayer, maxRadius);
+
+    // --- 3. Tests specifically for Gwozdz ---
+    bool testGwozdzAzymut = checkWszystkieMajaAzymut(gwozdzieInLayer);
+    bool testGwozdzOdl = checkWszystkieMajaOdl(gwozdzieInLayer);
+
+    // --- 4. Save the original state of the wysRequired flags ---
     Map<DrzewoModel, bool> originalFlags = {
       for (var tree in allTrees) tree: tree.wysRequired
     };
 
     final pomiarManager = PomiarWysokosci(powierzchnia: powierzchnia);
 
-    // --- 3. Test: "Najgrubsze" (Thickest Trees) ---
+    // --- 5. Test: "Najgrubsze" (Thickest Trees) ---
+    // Note: Assuming your inner manager logic already ignores gwozdz,
+    // otherwise you might need to pass `regularTreesInLayer` instead of `allTrees`
     bool testNajgrubsze = _checkNajgrubsze(
       pomiarManager: pomiarManager,
       allTrees: allTrees,
       selectedWarstwa: selectedWarstwa,
     );
 
-    // --- 4. Group Tests: 70% Proportion for Live and Dead Trees ---
+    // --- 6. Group Tests: 70% Proportion for Live and Dead Trees ---
 
     // Evaluate Live Trees
     Map<String, bool> testyWysokosciZywe = _checkGrupyWysokosci(
       pomiarManager: pomiarManager,
       allTrees: allTrees,
-      treesInLayer: treesInLayer,
+      treesInLayer: regularTreesInLayer, // Use filtered list here
       kategoriaDrzewa: 'zywe',
       selectedWarstwa: selectedWarstwa,
     );
 
-    // Evaluate Dead Trees (groups posusz, zlomy, wywroty, fragmenty)
+    // Evaluate Dead Trees
     Map<String, bool> testyWysokosciMartwe = _checkGrupyWysokosci(
       pomiarManager: pomiarManager,
       allTrees: allTrees,
-      treesInLayer: treesInLayer,
+      treesInLayer: regularTreesInLayer, // Use filtered list here
       kategoriaDrzewa: 'martwe',
       selectedWarstwa: selectedWarstwa,
     );
 
-    // --- 5. Restore flags to their original state ---
+    // --- 7. Restore flags to their original state ---
     for (var tree in allTrees) {
       tree.wysRequired = originalFlags[tree] ?? false;
     }
@@ -90,6 +117,11 @@ class KontrolaPowierzchni {
       testAzymut: testAzymut,
       testOdl: testOdl,
       testPromien: testPromien,
+
+      // Make sure you add these two new fields to your WynikiKontroli class!
+      testGwozdzAzymut: testGwozdzAzymut,
+      testGwozdzOdl: testGwozdzOdl,
+
       testNajgrubsze: testNajgrubsze,
       testyWysokosciZywe: testyWysokosciZywe,
       testyWysokosciMartwe: testyWysokosciMartwe,
@@ -301,6 +333,19 @@ class KontrolaPowierzchni {
             _buildKontrolaRow(
               nazwaKontroli: 'Drzewa mieszczą się w promieniu (${maxRadius.toStringAsFixed(2)}m)',
               wynik: wyniki.testPromien,
+            ),
+            const Divider(height: 1, color: Colors.black12),
+
+            // --- NEW: GWOŹDZIE TESTS ---
+            _buildKontrolaRow(
+              nazwaKontroli: 'Wszystkie gwoździe mają azymut',
+              wynik: wyniki.testGwozdzAzymut,
+            ),
+            const Divider(height: 1, color: Colors.black12),
+
+            _buildKontrolaRow(
+              nazwaKontroli: 'Wszystkie gwoździe mają odległość',
+              wynik: wyniki.testGwozdzOdl,
             ),
             const Divider(height: 1, color: Colors.black12),
 

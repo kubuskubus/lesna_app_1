@@ -124,6 +124,18 @@ class PomiarWysokosci {
     required String defaultGatunekWysokosc,
     required int defaultWiekWysokosc,
   }) {
+    // --- NEW: Handle dead trees separately ---
+    // if (typDrzewa == 'martwe' && defaultGatunekWysokosc != 'Najgrubsze') {
+    if (typDrzewa == 'martwe') {
+      return _assignDeadTrees(
+        allTrees: allTrees,
+        selectedWarstwa: selectedWarstwa,
+        gatunek: defaultGatunekWysokosc,
+        wiek: defaultWiekWysokosc,
+      );
+    }
+
+    // --- EXISTING LOGIC for live trees ---
     if (defaultGatunekWysokosc == 'Najgrubsze') {
       return _assignThickestTrees(
         allTrees: allTrees,
@@ -132,12 +144,40 @@ class PomiarWysokosci {
     } else {
       return _assignProportionalTrees(
         allTrees: allTrees,
-        typDrzewa: typDrzewa,
+        typDrzewa: typDrzewa, // 'zywe'
         selectedWarstwa: selectedWarstwa,
         gatunek: defaultGatunekWysokosc,
         wiek: defaultWiekWysokosc,
       );
     }
+  }
+
+// --- NEW HELPER FUNCTION ---
+  List<DrzewoModel> _assignDeadTrees({
+    required List<DrzewoModel> allTrees,
+    required String selectedWarstwa,
+    required String gatunek,
+    required int wiek,
+  }) {
+    List<DrzewoModel> targetTrees = allTrees.where((tree) {
+      bool matchesWarstwa = (selectedWarstwa == 'Wszyst.') ||
+          (tree.warstwa.toString() == selectedWarstwa || tree.warstwa.toString().isEmpty);
+
+      // Strictly match only dead trees
+      bool isDead = tree.typ['state'] == 'martwe';
+
+      // Match the requested species and age
+      bool matchesGatunek = (tree.gatunek == gatunek && tree.wiek == wiek);
+
+      return matchesWarstwa && isDead && matchesGatunek;
+    }).toList();
+
+    // --- NEW: Set height as required for all filtered dead trees ---
+    for (var tree in targetTrees) {
+      tree.wysRequired = true;
+    }
+
+    return targetTrees;
   }
 
   /// CASE 1: Filters by layer and strictly selects ONLY live trees for "Najgrubsze"
