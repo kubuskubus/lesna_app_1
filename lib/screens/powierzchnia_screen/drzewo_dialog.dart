@@ -53,6 +53,7 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
   final TextEditingController _wiekController = TextEditingController();
   late final TextEditingController _azymutController;
   final FocusNode _srednicaFocusNode = FocusNode();
+  final TextEditingController _notatkaController = TextEditingController();
 
   String _selectedDrzewoTyp = 'zywe';
   String _selectedDrzewoGatunek = '';
@@ -100,35 +101,69 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     _odlController.dispose();
     _wiekController.dispose();
     _srednicaFocusNode.dispose();
+    _notatkaController.dispose(); // <--
     super.dispose();
   }
 
   void _generateNextNumber() {
-    int maxNumer = widget.powierzchnia.drzewa.isNotEmpty
-        ? widget.powierzchnia.drzewa.map((e) => e.numer).reduce((a, b) => a > b ? a : b)
+    bool isGwozdz = _selectedDrzewoTyp == 'zywe_gwozdz';
+
+    // 1. Filter the trees to match the current numbering sequence
+    var relevantTrees = widget.powierzchnia.drzewa.where((tree) {
+      bool isTreeGwozdz = tree.typ['state'] == 'zywe' && tree.typ['type'] == 'gwozdz';
+
+      // If we are adding a gwozdz, only look at gwozdz numbers.
+      // Otherwise, look at all regular trees (dead, alive, broken, etc.)
+      return isGwozdz ? isTreeGwozdz : !isTreeGwozdz;
+    }).toList();
+
+    // 2. Find the highest number in that specific filtered list
+    int maxNumer = relevantTrees.isNotEmpty
+        ? relevantTrees.map((e) => e.numer).reduce((a, b) => a > b ? a : b)
         : 0;
+
     _numerDrzewaController.text = (maxNumer + 1).toString();
   }
 
   void _initializeDialogFields(DialogMode mode, DrzewoModel? tree) {
     if (mode == DialogMode.edit && tree != null) {
       _selectedDrzewoGatunek = tree.gatunek;
-      _selectedDrzewoTyp = tree.typ;
+
+      // Inside _initializeDialogFields:
+      if (tree.typ['state'] == 'zywe') {
+        if (tree.typ['type'] == 'gwozdz') {
+          _selectedDrzewoTyp = 'zywe_gwozdz'; // <-- Checks for the gwozdz type
+        } else {
+          _selectedDrzewoTyp = 'zywe';
+        }
+      } else {
+        _selectedDrzewoTyp = (tree.typ['type'] != null && tree.typ['type']!.isNotEmpty)
+            ? tree.typ['type']!
+            : 'posusz';
+      }
+
       _srednicaController.text = tree.srednica > 0 ? tree.srednica.toString().replaceAll('.', ',') : '';
       _wysokoscController.text = tree.wysokosc > 0 ? tree.wysokosc.toString().replaceAll('.', ',') : '';
 
-      // --- UPDATED: Safely handle nullable double? azymut ---
+      // Safely handle nullable double? azymut
       _azymutController.text = (tree.azymut != null && tree.azymut! > 0)
           ? tree.azymut!.toStringAsFixed(0)
           : '';
 
       _odlController.text = tree.odl > 0 ? tree.odl.toString().replaceAll('.', ',') : '';
       _wiekController.text = tree.wiek > 0 ? tree.wiek.toString() : '';
+
+      // --- NEW: Load existing note ---
+      _notatkaController.text = tree.notes;
     } else {
       _srednicaController.clear();
       _wysokoscController.clear();
       _azymutController.clear();
       _odlController.clear();
+
+      // --- NEW: Clear the note for a fresh dialog ---
+      _notatkaController.clear();
+
       _selectedDrzewoTyp = 'zywe';
 
       if (_localGatunki.isNotEmpty) {
@@ -142,15 +177,23 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     int? inputtedNumer = int.tryParse(val.trim());
 
     if (inputtedNumer != null) {
-      List<int> allNumbers = _getExistingTreeNumbers();
+      bool isGwozdz = _selectedDrzewoTyp == 'zywe_gwozdz';
 
+      // 1. Get numbers ONLY for the relevant sequence (gwozdz vs standard tree)
+      List<int> relevantNumbers = widget.powierzchnia.drzewa.where((tree) {
+        bool isTreeGwozdz = tree.typ['state'] == 'zywe' && tree.typ['type'] == 'gwozdz';
+        return isGwozdz ? isTreeGwozdz : !isTreeGwozdz;
+      }).map((tree) => tree.numer).toList();
+
+      // 2. If editing, remove the tree's original number so it doesn't collide with itself
       if (currentMode == DialogMode.edit && currentGlobalIndex != null) {
         int originalNumber = widget.powierzchnia.drzewa[currentGlobalIndex!].numer;
-        allNumbers.remove(originalNumber);
+        relevantNumbers.remove(originalNumber);
       }
 
-      if (allNumbers.contains(inputtedNumer)) {
-        return 'Numer drzewa już zdefiniowano';
+      // 3. Check for duplicates and return a context-aware error message
+      if (relevantNumbers.contains(inputtedNumer)) {
+        return isGwozdz ? 'Numer gwoździa już istnieje' : 'Numer drzewa już zdefiniowano';
       }
     }
 
@@ -222,215 +265,284 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
       _wiekController.text = _localGatunki.first.wiek > 0 ? _localGatunki.first.wiek.toString() : '';
     }
 
+    // --- NEW: Check if 'gwozdz' is selected ---
+    bool isGwozdz = _selectedDrzewoTyp == 'zywe_gwozdz';
+
     return AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: _numerDrzewaController,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onChanged: (val) {
-                    setState(() {
-                      numerError = _checkNumerExists(val);
-                    });
-                  },
-                  decoration: InputDecoration(
-                    labelText: 'Numer drzewa',
-                    errorText: numerError,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildNumerInput(),
+              SizedBox(height: verticalSpacing),
 
+              _buildStanDrzewaDropdown(),
+              SizedBox(height: verticalSpacing),
+
+              // --- HIDE IF GWOZDZ ---
+              if (!isGwozdz) ...[
+                _buildGatunekRow(horizontalSpacing),
                 SizedBox(height: verticalSpacing),
 
-                DropdownButtonFormField<String>(
-                  value: _selectedDrzewoTyp.isNotEmpty ? _selectedDrzewoTyp : 'zywe',
-                  decoration: InputDecoration(
-                    labelText: 'Stan drzewa',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'zywe', child: Text('Żywe')),
-                    DropdownMenuItem(value: 'martwe', child: Text('Martwe')),
-                  ],
-                  onChanged: (String? val) {
-                    if (val != null) setState(() => _selectedDrzewoTyp = val);
-                  },
-                ),
-
+                _buildSrednicaInput(),
                 SizedBox(height: verticalSpacing),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        value: _localGatunki.any((g) => '${g.nazwa}_${g.wiek}' == '${_selectedDrzewoGatunek}_${_wiekController.text.isEmpty ? '0' : _wiekController.text}')
-                            ? '${_selectedDrzewoGatunek}_${_wiekController.text.isEmpty ? '0' : _wiekController.text}'
-                            : null,
-                        decoration: InputDecoration(
-                          labelText: 'Gatunek',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        items: _localGatunki.map((gatunekObj) {
-                          final String combinedLabel = '${gatunekObj.nazwa}${gatunekObj.wiek}';
-                          final String uniqueKey = '${gatunekObj.nazwa}_${gatunekObj.wiek}';
-                          return DropdownMenuItem<String>(
-                            value: uniqueKey,
-                            child: Text(combinedLabel),
-                          );
-                        }).toList(),
-                        onChanged: (String? val) {
-                          if (val != null) {
-                            setState(() {
-                              final selectedGatunekObj = _localGatunki.firstWhere(
-                                    (g) => '${g.nazwa}_${g.wiek}' == val,
-                              );
-                              _selectedDrzewoGatunek = selectedGatunekObj.nazwa;
-                              _wiekController.text = selectedGatunekObj.wiek > 0
-                                  ? selectedGatunekObj.wiek.toString()
-                                  : '';
-                            });
-                          }
-                        },
-                      ),
-                    ),
-
-                    SizedBox(width: horizontalSpacing),
-
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade400),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.add, color: Colors.black87),
-                        tooltip: 'Dodaj nowy gatunek',
-                        onPressed: _showAddGatunekDialog,
-                      ),
-                    ),
-                  ],
-                ),
-
-                SizedBox(height: verticalSpacing),
-
-                TextField(
-                  controller: _srednicaController,
-                  focusNode: _srednicaFocusNode,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  inputFormatters: [AutoDecimalFormatter(decimalDigits: 1)],
-                  onChanged: (val) {
-                    setState(() {
-                      srednicaError = _checkSrednicaLimit(val);
-                    });
-                  },
-                  decoration: InputDecoration(
-                    labelText: 'Średnica (cm)',
-                    errorText: srednicaError,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-
-                SizedBox(height: verticalSpacing),
-
-                TextField(
-                  controller: _azymutController, // Make sure this is initialized as TextEditingController(text: '')
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onChanged: (val) {
-                    setState(() {
-                      azymutError = _checkAzymutLimit(val);
-                      // Update the existingTree model if it exists
-                      if (widget.existingTree != null) {
-                        // If empty/whitespace -> null, otherwise parse to double (so '0' becomes 0.0)
-                        widget.existingTree!.azymut = val.trim().isEmpty ? null : double.tryParse(val);
-                      }
-                    });
-                  },
-                  decoration: InputDecoration(
-                    labelText: 'Azymut (°)',
-                    errorText: azymutError, // Will show 'Wymagane' if empty
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-
-                SizedBox(height: verticalSpacing),
-
-                TextField(
-                  controller: _odlController,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  inputFormatters: [AutoDecimalFormatter(decimalDigits: 2)],
-                  onChanged: (val) {
-                    setState(() {
-                      odlError = _checkOdlegloscLimit(val);
-                    });
-                  },
-                  decoration: InputDecoration(
-                    labelText: 'Odległość (m)',
-                    errorText: odlError,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-
-                SizedBox(height: verticalSpacing),
-
-                TextField(
-                  controller: _wysokoscController,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  inputFormatters: [AutoDecimalFormatter(decimalDigits: 1)],
-                  onChanged: (val) {
-                    setState(() {
-                      wysokoscError = _checkWysokoscLimit(val);
-                    });
-                  },
-                  decoration: InputDecoration(
-                    labelText: 'Wysokość (m)',
-                    errorText: wysokoscError,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
               ],
-            ),
+
+              _buildOdlegloscInput(),
+              SizedBox(height: verticalSpacing),
+
+              _buildAzymutInput(),
+              SizedBox(height: verticalSpacing),
+
+              // --- HIDE IF GWOZDZ ---
+              if (!isGwozdz) ...[
+                _buildWysokoscInput(),
+                SizedBox(height: verticalSpacing),
+              ],
+
+              _buildNotatkaInput(),
+            ],
           ),
         ),
+      ),
       actionsAlignment: MainAxisAlignment.spaceBetween,
       actionsPadding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 16.0),
-      actions: [
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            elevation: 0,
-            backgroundColor: numerError != null ? Colors.grey.shade300 : Colors.green.shade200,
-            foregroundColor: Colors.black87,
-            alignment: Alignment.center,
+      actions: _buildActionButtons(),
+    );
+  }
+
+// --- EXTRACTED WIDGET METHODS ---
+
+  Widget _buildNumerInput() {
+    bool isGwozdz = _selectedDrzewoTyp == 'zywe_gwozdz';
+
+    return TextField(
+      controller: _numerDrzewaController,
+      keyboardType: TextInputType.number,
+      textInputAction: TextInputAction.next,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      onChanged: (val) {
+        setState(() {
+          numerError = _checkNumerExists(val);
+        });
+      },
+      decoration: InputDecoration(
+        labelText: isGwozdz ? 'Numer gwoździa' : 'Numer drzewa',
+        errorText: numerError,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  Widget _buildStanDrzewaDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedDrzewoTyp.isNotEmpty ? _selectedDrzewoTyp : 'zywe',
+      decoration: InputDecoration(
+        labelText: 'Stan drzewa',
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      items: const [
+        DropdownMenuItem(value: 'zywe', child: Text('Żywe')),
+        DropdownMenuItem(value: 'posusz', child: Text('Posusz (martwe stojące)')),
+        DropdownMenuItem(value: 'zlomy', child: Text('Złomy (stojące złamane)')),
+        DropdownMenuItem(value: 'wywroty', child: Text('Wywroty i ścięte (leżące)')),
+        DropdownMenuItem(value: 'fragmenty', child: Text('Fragmenty (kłody, gałęzie)')),
+        DropdownMenuItem(value: 'zywe_gwozdz', child: Text('Gwoździe')),
+      ],
+      // Inside _buildStanDrzewaDropdown()
+      onChanged: (String? val) {
+        if (val != null) {
+          setState(() {
+            _selectedDrzewoTyp = val;
+
+            // Auto-update the number sequence when switching between tree/gwozdz
+            if (currentMode != DialogMode.edit) {
+              _generateNextNumber();
+              numerError = _checkNumerExists(_numerDrzewaController.text);
+            }
+          });
+        }
+      },
+    );
+  }
+
+  Widget _buildGatunekRow(double horizontalSpacing) {
+    return Row(
+      children: [
+        Expanded(
+          child: DropdownButtonFormField<String>(
+            isExpanded: true,
+            value: _localGatunki.any((g) => '${g.nazwa}_${g.wiek}' == '${_selectedDrzewoGatunek}_${_wiekController.text.isEmpty ? '0' : _wiekController.text}')
+                ? '${_selectedDrzewoGatunek}_${_wiekController.text.isEmpty ? '0' : _wiekController.text}'
+                : null,
+            decoration: InputDecoration(
+              labelText: 'Gatunek',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            items: _localGatunki.map((gatunekObj) {
+              final String combinedLabel = '${gatunekObj.nazwa}${gatunekObj.wiek}';
+              final String uniqueKey = '${gatunekObj.nazwa}_${gatunekObj.wiek}';
+              return DropdownMenuItem<String>(
+                value: uniqueKey,
+                child: Text(combinedLabel),
+              );
+            }).toList(),
+            onChanged: (String? val) {
+              if (val != null) {
+                setState(() {
+                  final selectedGatunekObj = _localGatunki.firstWhere(
+                        (g) => '${g.nazwa}_${g.wiek}' == val,
+                  );
+                  _selectedDrzewoGatunek = selectedGatunekObj.nazwa;
+                  _wiekController.text = selectedGatunekObj.wiek > 0
+                      ? selectedGatunekObj.wiek.toString()
+                      : '';
+                });
+              }
+            },
           ),
-          onPressed: numerError != null ? null : () => _handleSaveTree(false),
-          child: const Text('Zakończ edycję', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            elevation: 0,
-            backgroundColor: numerError != null ? Colors.grey.shade300 : Colors.green.shade200,
-            foregroundColor: Colors.black87,
-            alignment: Alignment.center,
+        SizedBox(width: horizontalSpacing),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade400),
           ),
-          onPressed: numerError != null ? null : () => _handleSaveTree(true),
-          child: const Text('Dodaj następne', style: TextStyle(fontWeight: FontWeight.bold)),
+          child: IconButton(
+            icon: const Icon(Icons.add, color: Colors.black87),
+            tooltip: 'Dodaj nowy gatunek',
+            onPressed: _showAddGatunekDialog,
+          ),
         ),
       ],
     );
+  }
+
+  Widget _buildSrednicaInput() {
+    return TextField(
+      controller: _srednicaController,
+      focusNode: _srednicaFocusNode,
+      keyboardType: TextInputType.number,
+      textInputAction: TextInputAction.next,
+      inputFormatters: [AutoDecimalFormatter(decimalDigits: 1)],
+      onChanged: (val) {
+        setState(() {
+          srednicaError = _checkSrednicaLimit(val);
+        });
+      },
+      decoration: InputDecoration(
+        labelText: 'Średnica (cm)',
+        errorText: srednicaError,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  Widget _buildOdlegloscInput() {
+    return TextField(
+      controller: _odlController,
+      keyboardType: TextInputType.number,
+      textInputAction: TextInputAction.next,
+      inputFormatters: [AutoDecimalFormatter(decimalDigits: 2)],
+      onChanged: (val) {
+        setState(() {
+          odlError = _checkOdlegloscLimit(val);
+        });
+      },
+      decoration: InputDecoration(
+        labelText: 'Odległość (m)',
+        errorText: odlError,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  Widget _buildAzymutInput() {
+    return TextField(
+      controller: _azymutController,
+      keyboardType: TextInputType.number,
+      textInputAction: TextInputAction.next,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      onChanged: (val) {
+        setState(() {
+          azymutError = _checkAzymutLimit(val);
+          if (widget.existingTree != null) {
+            widget.existingTree!.azymut = val.trim().isEmpty ? null : double.tryParse(val);
+          }
+        });
+      },
+      decoration: InputDecoration(
+        labelText: 'Azymut (°)',
+        errorText: azymutError,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  Widget _buildWysokoscInput() {
+    bool isMartwe = ['posusz', 'zlomy', 'wywroty', 'fragmenty'].contains(_selectedDrzewoTyp);
+
+    return TextField(
+      controller: _wysokoscController,
+      keyboardType: TextInputType.number,
+      textInputAction: TextInputAction.next,
+      inputFormatters: [AutoDecimalFormatter(decimalDigits: 1)],
+      onChanged: (val) {
+        setState(() {
+          wysokoscError = _checkWysokoscLimit(val);
+        });
+      },
+      decoration: InputDecoration(
+        labelText: isMartwe ? 'Wysokość / Długość (m)' : 'Wysokość (m)',
+        errorText: wysokoscError,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  Widget _buildNotatkaInput() {
+    return TextField(
+      controller: _notatkaController,
+      keyboardType: TextInputType.multiline,
+      textInputAction: TextInputAction.done,
+      textCapitalization: TextCapitalization.sentences,
+      maxLines: 3,
+      decoration: InputDecoration(
+        labelText: 'Notatka',
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  List<Widget> _buildActionButtons() {
+    return [
+      ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: numerError != null ? Colors.grey.shade300 : Colors.green.shade200,
+          foregroundColor: Colors.black87,
+          alignment: Alignment.center,
+        ),
+        onPressed: numerError != null ? null : () => _handleSaveTree(false),
+        child: const Text('Zakończ edycję', style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+      ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: numerError != null ? Colors.grey.shade300 : Colors.green.shade200,
+          foregroundColor: Colors.black87,
+          alignment: Alignment.center,
+        ),
+        onPressed: numerError != null ? null : () => _handleSaveTree(true),
+        child: const Text('Dodaj następne', style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+    ];
   }
 
   void _showAddGatunekDialog() {
@@ -513,8 +625,6 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     // If the text field is empty, inputtedAzymut becomes null naturally
     final double? inputtedAzymut = double.tryParse(_azymutController.text.replaceAll(',', '.'));
 
-    // 2. OPTION 1: Parse the azimuth text. If the field is empty, it defaults to 999.0
-    // Attempt to read the text. If it is empty, it assigns 999.0
     String inputtedNumerText = _numerDrzewaController.text.trim();
     bool numberExists = _checkNumerExists(inputtedNumerText) != null;
 
@@ -526,20 +636,38 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     }
 
     int inputtedNumer = int.tryParse(inputtedNumerText) ?? 0;
+
+    // --- UPDATED: Convert the String dropdown value to the new Map structure ---
+    // it will save as zywe gwozdz -but it is treated as just gwozdz
+    Map<String, String> parsedTypMap;
+    if (_selectedDrzewoTyp == 'zywe') {
+      parsedTypMap = {'state': 'zywe', 'type': ''};
+    } else if (_selectedDrzewoTyp == 'zywe_gwozdz') {
+      parsedTypMap = {'state': 'zywe', 'type': 'gwozdz'};
+    } else {
+      parsedTypMap = {'state': 'martwe', 'type': _selectedDrzewoTyp};
+    }
+
     final newTree = DrzewoModel(
       numer: inputtedNumer,
       powierzchniaNumer: widget.powierzchnia.numer,
       gatunek: _selectedDrzewoGatunek,
-      typ: _selectedDrzewoTyp,
-      // --- CHANGED: Passing the String directly instead of using int.tryParse ---
+      typ: parsedTypMap,
       warstwa: (currentMode == DialogMode.edit && widget.existingTree != null)
           ? widget.existingTree!.warstwa
           : widget.selectedWarstwa,
       srednica: double.tryParse(_srednicaController.text.replaceAll(',', '.')) ?? 0.0,
       wysokosc: double.tryParse(_wysokoscController.text.replaceAll(',', '.')) ?? 0.0,
-      azymut: inputtedAzymut, // <-- Passes null if the user left it blank
+      azymut: inputtedAzymut,
       odl: double.tryParse(_odlController.text.replaceAll(',', '.')) ?? 0.0,
       wiek: int.tryParse(_wiekController.text) ?? 0,
+
+      klasaRozkladu: (currentMode == DialogMode.edit && widget.existingTree != null)
+          ? widget.existingTree!.klasaRozkladu
+          : 0,
+
+      // --- UPDATED: Save the note directly from the controller ---
+      notes: _notatkaController.text.trim(),
     );
 
     setState(() {
@@ -559,6 +687,9 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
         _wysokoscController.clear();
         _azymutController.clear();
         _odlController.clear();
+
+        // --- UPDATED: Clear the note for the next tree ---
+        _notatkaController.clear();
 
         _generateNextNumber();
 

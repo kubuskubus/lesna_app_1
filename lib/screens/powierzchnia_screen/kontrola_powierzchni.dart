@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:lesna_app_1/screens/powierzchnia_screen/pomiar_wysokosci.dart';
 import 'powierzchnia_model.dart'; // Make sure the path to DrzewoModel is correct
 
-
-
 /// A data class to hold the results of all control tests.
 class WynikiKontroli {
   final bool testSrednice;
   final bool testAzymut;
   final bool testOdl;
-  final bool testPromien; // <-- NEW
+  final bool testPromien;
   final bool testNajgrubsze;
   final Map<String, bool> testyWysokosciZywe;
   final Map<String, bool> testyWysokosciMartwe;
@@ -18,23 +16,20 @@ class WynikiKontroli {
     required this.testSrednice,
     required this.testAzymut,
     required this.testOdl,
-    required this.testPromien, // <-- NEW
+    required this.testPromien,
     required this.testNajgrubsze,
     required this.testyWysokosciZywe,
     required this.testyWysokosciMartwe,
   });
 }
 
-
-
 class KontrolaPowierzchni {
-
 
   /// Executes all logical checks and returns the results.
   static WynikiKontroli wykonajTestyKontrolne({
     required PowierzchniaModel powierzchnia,
     required String selectedWarstwa,
-    required double maxRadius, // <-- YOU NEED TO ADD THIS LINE HERE
+    required double maxRadius,
   }) {
     final List<DrzewoModel> allTrees = powierzchnia.drzewa;
 
@@ -49,7 +44,7 @@ class KontrolaPowierzchni {
     bool testSrednice = checkWszystkieMajaSrednice(treesInLayer);
     bool testAzymut = checkWszystkieMajaAzymut(treesInLayer);
     bool testOdl = checkWszystkieMajaOdl(treesInLayer);
-    bool testPromien = checkWszystkieWPromieniu(treesInLayer, maxRadius); // <-- NEW CHECK
+    bool testPromien = checkWszystkieWPromieniu(treesInLayer, maxRadius);
 
     // --- 2. Save the original state of the wysRequired flags ---
     Map<DrzewoModel, bool> originalFlags = {
@@ -72,16 +67,16 @@ class KontrolaPowierzchni {
       pomiarManager: pomiarManager,
       allTrees: allTrees,
       treesInLayer: treesInLayer,
-      typDrzewa: 'zywe',
+      kategoriaDrzewa: 'zywe',
       selectedWarstwa: selectedWarstwa,
     );
 
-    // Evaluate Dead Trees
+    // Evaluate Dead Trees (groups posusz, zlomy, wywroty, fragmenty)
     Map<String, bool> testyWysokosciMartwe = _checkGrupyWysokosci(
       pomiarManager: pomiarManager,
       allTrees: allTrees,
       treesInLayer: treesInLayer,
-      typDrzewa: 'martwe',
+      kategoriaDrzewa: 'martwe',
       selectedWarstwa: selectedWarstwa,
     );
 
@@ -94,7 +89,7 @@ class KontrolaPowierzchni {
       testSrednice: testSrednice,
       testAzymut: testAzymut,
       testOdl: testOdl,
-      testPromien: testPromien, // <-- NEW
+      testPromien: testPromien,
       testNajgrubsze: testNajgrubsze,
       testyWysokosciZywe: testyWysokosciZywe,
       testyWysokosciMartwe: testyWysokosciMartwe,
@@ -106,15 +101,24 @@ class KontrolaPowierzchni {
     required PomiarWysokosci pomiarManager,
     required List<DrzewoModel> allTrees,
     required List<DrzewoModel> treesInLayer,
-    required String typDrzewa,
+    required String kategoriaDrzewa,
     required String selectedWarstwa,
   }) {
     Map<String, bool> testyWysokosci = {};
     Set<String> unikalneGrupy = {};
 
-    // 1. Collect unique groups (species + age) from the selected layer for the given type
+    // 1. Collect unique groups (species + age) from the selected layer for the given category
     for (var tree in treesInLayer) {
-      if (tree.typ == typDrzewa) {
+      bool isMatch = false;
+
+      // --- UPDATED: No more martweTypy list! Check the Map keys directly ---
+      if (kategoriaDrzewa == 'gwozdz') {
+        isMatch = tree.typ['state'] == 'zywe' && tree.typ['type'] == 'gwozdz';
+      } else {
+        isMatch = tree.typ['state'] == kategoriaDrzewa;
+      }
+
+      if (isMatch) {
         unikalneGrupy.add('${tree.gatunek}|${tree.wiek}');
       }
     }
@@ -125,9 +129,10 @@ class KontrolaPowierzchni {
       String gatunek = parts[0];
       int wiek = int.parse(parts[1]);
 
+      // Pass the general category ('zywe', 'martwe', or 'gwozdz') down to the height manager
       List<DrzewoModel> groupTrees = pomiarManager.getTreesForHeightMeasurement(
         allTrees: allTrees,
-        typDrzewa: typDrzewa,
+        typDrzewa: kategoriaDrzewa,
         selectedWarstwa: selectedWarstwa,
         defaultGatunekWysokosc: gatunek,
         defaultWiekWysokosc: wiek,
@@ -177,9 +182,6 @@ class KontrolaPowierzchni {
     return true; // Returns true if all required trees have their height measured or if none were required
   }
 
-
-
-
   // --- 1. LOGICAL CHECKS ---
 
   /// Checks if all trees in the list have a diameter > 0.
@@ -197,7 +199,6 @@ class KontrolaPowierzchni {
   static bool checkWszystkieMajaAzymut(List<DrzewoModel> drzewa) {
     if (drzewa.isEmpty) return false;
     for (var drzewo in drzewa) {
-      // If it's null (was left empty/spaces) or out of range, it fails
       if (drzewo.azymut == null || drzewo.azymut! < 0 || drzewo.azymut! > 360) {
         return false;
       }
@@ -209,7 +210,6 @@ class KontrolaPowierzchni {
   static bool checkWszystkieMajaOdl(List<DrzewoModel> drzewa) {
     if (drzewa.isEmpty) return false;
     for (var drzewo in drzewa) {
-      // Add an upper limit like "|| drzewo.odl > 50" if needed
       if (drzewo.odl <= 0) {
         return false;
       }
@@ -221,7 +221,6 @@ class KontrolaPowierzchni {
   static bool checkWszystkieWPromieniu(List<DrzewoModel> drzewa, double maxRadius) {
     if (drzewa.isEmpty) return false;
     for (var tree in drzewa) {
-      // Assuming distance is stored in `tree.odl`
       if (tree.odl > maxRadius) {
         return false;
       }
@@ -229,25 +228,20 @@ class KontrolaPowierzchni {
     return true;
   }
 
-
-
-
   // --- 2. UI DISPLAY METHOD ---
 
   /// Builds the table view for the "Kontrola" tab.
   static Widget buildKontrolaTable({
     required PowierzchniaModel powierzchnia,
     required String selectedWarstwa,
-    required double maxRadius, // <-- NEW PARAMETER
+    required double maxRadius,
   }) {
-    // Execute the separated logic
     final wyniki = wykonajTestyKontrolne(
       powierzchnia: powierzchnia,
       selectedWarstwa: selectedWarstwa,
-      maxRadius: maxRadius, // <-- PASS IT DOWN
+      maxRadius: maxRadius,
     );
 
-    // --- 6. Build UI ---
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 16.0),
       child: Container(
@@ -301,15 +295,13 @@ class KontrolaPowierzchni {
               nazwaKontroli: 'Wszystkie drzewa mają odległość',
               wynik: wyniki.testOdl,
             ),
-
             const Divider(height: 1, color: Colors.black12),
 
-            // --- NEW RADIUS CHECK UI ROW ---
+            // --- CHECK RADIUS ---
             _buildKontrolaRow(
               nazwaKontroli: 'Drzewa mieszczą się w promieniu (${maxRadius.toStringAsFixed(2)}m)',
               wynik: wyniki.testPromien,
             ),
-
             const Divider(height: 1, color: Colors.black12),
 
             // --- CHECK 2: Najgrubsze ---
@@ -336,7 +328,7 @@ class KontrolaPowierzchni {
 
             // --- SECTION: DRZEWA MARTWE ---
             if (wyniki.testyWysokosciMartwe.isNotEmpty) ...[
-              _buildSectionHeader('Drzewa martwe'),
+              _buildSectionHeader('Drzewa martwe (w tym posusz, złomy, wywroty, fragmenty)'),
               ...wyniki.testyWysokosciMartwe.entries.map((entry) {
                 return Column(
                   children: [
@@ -357,12 +349,11 @@ class KontrolaPowierzchni {
 
   // --- HELPER METHODS ---
 
-  // --- NEW: Sub-header for grouping sections ---
   static Widget _buildSectionHeader(String title) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       decoration: BoxDecoration(
-        color: Colors.grey.shade200, // Slightly darker than white, lighter than header
+        color: Colors.grey.shade200,
         border: const Border(
             top: BorderSide(color: Colors.black12),
             bottom: BorderSide(color: Colors.black12)

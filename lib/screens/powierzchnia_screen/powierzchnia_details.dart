@@ -64,17 +64,23 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   final TextEditingController _azymutController = TextEditingController();
   final TextEditingController _odlController = TextEditingController();
   final TextEditingController _wiekController = TextEditingController(); // Added
-  final TextEditingController _numerDrzewaController = TextEditingController();
 
   // Add this near your TextEditingControllers
   final FocusNode _srednicaFocusNode = FocusNode();
 
+// 1. Żywe (Live) - Shows ONLY standard live trees (excludes gwozdz)
   List<DrzewoModel> get _currentDrzewa => widget.powierzchnia.drzewa
-      .where((d) => d.typ == 'zywe')
+      .where((d) => d.typ['state'] == 'zywe' && d.typ['type'] == '')
       .toList();
 
+// 2. Martwe (Dead) - Shows dead trees (posusz, zlomy, etc.)
   List<DrzewoModel> get _currentDrzewaMartwe => widget.powierzchnia.drzewa
-      .where((d) => d.typ == 'martwe')
+      .where((d) => d.typ['state'] == 'martwe')
+      .toList();
+
+// 3. Gwóźdź - Shows ONLY the live trees that have nails
+  List<DrzewoModel> get _currentDrzewaGwozdz => widget.powierzchnia.drzewa
+      .where((d) => d.typ['state'] == 'zywe' && d.typ['type'] == 'gwozdz')
       .toList();
 
   // Add this variable
@@ -85,8 +91,8 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   @override
   void initState() {
     super.initState();
-    // Initialize the controller with 3 tabs
-    _tabController = TabController(length: 3, vsync: this);
+    // Initialize the controller with 4 tabs
+    _tabController = TabController(length: 4, vsync: this);
     _treeSubscription = BluetoothServiceManager().onTreeMeasured.listen(_handleIncomingBleMeasurement);
     placeholderFunction();
     // _inputNachylenieValue();
@@ -424,49 +430,120 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // --- 1. THE TOGGLE BUTTON ---
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 4.0),
-          child: ElevatedButton.icon(
-            onPressed: () {
-              setState(() {
-                // Toggle the state
-                _isWysokoscPomiarActive = !_isWysokoscPomiarActive;
+          child: Row(
+            children: [
+              // --- 1. THE TOGGLE BUTTON (Pomiar wysokości) ---
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _isWysokoscPomiarActive = !_isWysokoscPomiarActive;
+                      if (!_isWysokoscPomiarActive) {
+                        _defaultGatunekWysokosc = 'Najgrubsze';
+                        _defaultWiekWysokosc = 0;
+                      }
+                    });
+                  },
+                  icon: Icon(
+                    _isWysokoscPomiarActive ? Icons.straighten : Icons.height,
+                    color: _isWysokoscPomiarActive ? Colors.blue : Colors.grey.shade700,
+                  ),
+                  label: const Text(
+                    'Wysokości',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _isWysokoscPomiarActive ? Colors.blue.shade50 : Colors.white,
+                    foregroundColor: Colors.black87,
+                    elevation: 0,
+                    side: BorderSide(
+                      color: _isWysokoscPomiarActive ? Colors.blue : Colors.grey.shade300,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
 
-                // --- NEW: Reset to 'Najgrubsze' when closing the menu ---
-                if (!_isWysokoscPomiarActive) {
-                  _defaultGatunekWysokosc = 'Najgrubsze';
-                  _defaultWiekWysokosc = 0;
-                }
-              });
-            },
-            icon: Icon(
-              _isWysokoscPomiarActive ? Icons.straighten : Icons.height,
-              color: _isWysokoscPomiarActive ? Colors.blue : Colors.grey.shade700,
-            ),
-            label: const Text(
-              'Pomiar wysokości',
-              style: TextStyle(fontWeight: FontWeight.w500),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _isWysokoscPomiarActive ? Colors.blue.shade50 : Colors.white,
-              foregroundColor: Colors.black87,
-              elevation: 0,
-              side: BorderSide(
-                color: _isWysokoscPomiarActive ? Colors.blue : Colors.grey.shade300,
+              const SizedBox(width: 8),
+
+              // --- 2. THE NOTE BUTTON (Notatka) ---
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _showPowierzchniaNoteDialog,
+                  icon: Icon(
+                    Icons.edit_note,
+                    color: widget.powierzchnia.notes.isNotEmpty ? Colors.orange : Colors.grey.shade700,
+                  ),
+                  label: const Text(
+                    'Notatka',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.powierzchnia.notes.isNotEmpty ? Colors.orange.shade50 : Colors.white,
+                    foregroundColor: Colors.black87,
+                    elevation: 0,
+                    side: BorderSide(
+                      color: widget.powierzchnia.notes.isNotEmpty ? Colors.orange : Colors.grey.shade300,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
               ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
+            ],
           ),
         ),
-
-        // --- 2. CONDITIONALLY DISPLAY THE EXPANSION LIST ---
+        // --- CONDITIONALLY DISPLAY THE EXPANSION LIST ---
         if (_isWysokoscPomiarActive)
-          _buildGatunekExpansion(),
+          _buildGatunekExpansion(), // <-- FIXED: Removed 'Expanded' wrapper here
       ],
+    );
+  }
+
+// --- ADD THIS METHOD ANYWHERE IN YOUR STATE CLASS ---
+  void _showPowierzchniaNoteDialog() {
+    final TextEditingController noteController =
+    TextEditingController(text: widget.powierzchnia.notes);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Notatka do powierzchni'),
+          content: TextField(
+            controller: noteController,
+            maxLines: 5,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              hintText: 'Wpisz notatkę tutaj...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Anuluj'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  widget.powierzchnia.notes = noteController.text.trim();
+                });
+                widget.onUpdate(); // Ensure it saves to the main file
+                Navigator.pop(context);
+              },
+              child: const Text('Zapisz'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -574,7 +651,10 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     availableGatunki = availableGatunki.where((gatunek) {
       return widget.powierzchnia.drzewa.any((tree) {
         bool matchesWarstwa = tree.warstwa.toString() == _selectedWarstwa;
-        bool matchesTyp = tree.typ == activeTypDrzewa;
+
+        // --- UPDATED: Simply check the 'state' key ---
+        bool matchesTyp = tree.typ['state'] == activeTypDrzewa;
+
         bool matchesGatunek = tree.gatunek == gatunek.nazwa && tree.wiek == gatunek.wiek;
 
         return matchesWarstwa && matchesTyp && matchesGatunek;
@@ -667,9 +747,10 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
             unselectedLabelColor: Colors.grey,
             indicatorColor: Colors.deepPurple,
             tabs: const [
-              Tab(text: 'Drzewa żyw.'),
-              Tab(text: 'Drzewa martw.'),
-              Tab(text: 'Kontrola'),
+              Tab(text: 'Drz.żyw.'),
+              Tab(text: 'Drz.mart.'),
+              Tab(text: 'Gwoźdz.'), // <-- NEW TAB ADDED HERE
+              Tab(text: 'Kontrol.'),
             ],
           ),
           const SizedBox(height: 8),
@@ -687,12 +768,17 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                     ? _buildEmptyState('Brak martwych drzew.')
                     : _buildTreeTabContent('martwe'),
 
-                // Tab 3: Kontrola
+                // Tab 3: Drzewa z gwoździami (NEW VIEW ADDED HERE)
+                _currentDrzewaGwozdz.isEmpty
+                    ? _buildEmptyState('Brak drzew z gwoździami.')
+                    : _buildTreeTabContent('gwozdz'),
+
+                // Tab 4: Kontrola
                 SingleChildScrollView(
                   child: KontrolaPowierzchni.buildKontrolaTable(
                     powierzchnia: widget.powierzchnia,
                     selectedWarstwa: _selectedWarstwa,
-                    maxRadius: _maxRadiusSurface, // <-- ADD THIS
+                    maxRadius: _maxRadiusSurface,
                   ),
                 ),
               ],
@@ -713,7 +799,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     );
   }
 
-// 1. Unify the widget to accept a list of trees
+  // 1. Unify the widget to accept a list of trees
   Widget _buildTreeTabContent(String typDrzewa) {
     final pomiarManager = PomiarWysokosci(powierzchnia: widget.powierzchnia);
 
@@ -727,18 +813,25 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     );
 
     if (finalTrees.isEmpty) {
-      return _buildEmptyState(
-          typDrzewa == 'zywe'
-              ? 'Brak żywych drzew. Kliknij "+ dodaj wiele" lub "+ drzewo".'
-              : 'Brak martwych drzew.'
-      );
+      String emptyMessage;
+      if (typDrzewa == 'zywe') {
+        emptyMessage = 'Brak żywych drzew. Kliknij "+ dodaj wiele" lub "+ drzewo".';
+      } else if (typDrzewa == 'zywe_gwozdz') {
+        emptyMessage = 'Brak gwoździ. Kliknij "+ dodaj".';
+      } else {
+        emptyMessage = 'Brak martwych drzew.';
+      }
+      return _buildEmptyState(emptyMessage);
     }
 
     return ListView(
       // Increased bottom padding to 100.0 so the last row is always visible when scrolled to the bottom
       padding: const EdgeInsets.only(top: 8.0, bottom: 100.0),
       children: [
-        _buildDrzewaTable(finalTrees),
+        // --- UPDATED: Call the correct table widget based on typDrzewa ---
+        typDrzewa == 'gwozdz'
+            ? _buildGwozdzieTable(finalTrees)
+            : _buildDrzewaTable(finalTrees),
       ],
     );
   }
@@ -865,6 +958,105 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                 ),
                 DataCell(
                   SizedBox(width: colWysWidth, child: Text(drzewo.wysokosc > 0 ? drzewo.wysokosc.toStringAsFixed(1) : '-')),
+                  onTap: () {
+                    if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                  },
+                ),
+                DataCell(
+                  SizedBox(
+                    width: colAkcjeWidth,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      alignment: Alignment.centerLeft,
+                      icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                      onPressed: () {
+                        if (globalIndex >= 0) {
+                          setState(() {
+                            widget.powierzchnia.drzewa.removeAt(globalIndex);
+                          });
+                          widget.onUpdate();
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGwozdzieTable(List<DrzewoModel> gwozdzieList) {
+    List<DrzewoModel> displayList = List.from(gwozdzieList);
+
+    // Adjusted fixed widths for the new columns.
+    final double colNrWidth = 30.0;
+    final double colOdlWidth = 60.0;
+    final double colAzymWidth = 60.0;
+    final double colAkcjeWidth = 40.0;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+        color: Colors.white,
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.topCenter,
+        child: DataTable(
+          columnSpacing: 16.0,
+          horizontalMargin: 16.0,
+          // Standard sorting for nails (assuming you track this state similarly)
+          sortColumnIndex: _sortColumnIndex,
+          sortAscending: _sortAscending,
+          headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+          dataRowMinHeight: 40,
+          dataRowMaxHeight: 48,
+          columns: [
+            DataColumn(
+              label: SizedBox(width: colNrWidth, child: const Text('Nr.', style: TextStyle(fontWeight: FontWeight.bold))),
+              onSort: _onSort,
+            ),
+            DataColumn(
+              label: SizedBox(width: colOdlWidth, child: const Text('Odl.', style: TextStyle(fontWeight: FontWeight.bold))),
+              onSort: _onSort,
+              numeric: true,
+            ),
+            DataColumn(
+              label: SizedBox(width: colAzymWidth, child: const Text('Azym.', style: TextStyle(fontWeight: FontWeight.bold))),
+              onSort: _onSort,
+              numeric: true,
+            ),
+            DataColumn(
+              label: SizedBox(width: colAkcjeWidth, child: const Text('Akcje', style: TextStyle(fontWeight: FontWeight.bold))),
+            ),
+          ],
+          rows: List.generate(displayList.length, (index) {
+            final drzewo = displayList[index];
+            final globalIndex = widget.powierzchnia.drzewa.indexOf(drzewo);
+
+            final String numerStr = drzewo.numer.toString();
+
+            return DataRow(
+              cells: [
+                DataCell(
+                  SizedBox(width: colNrWidth, child: Text(numerStr, style: const TextStyle(fontWeight: FontWeight.w500))),
+                  onTap: () {
+                    if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                  },
+                ),
+                DataCell(
+                  SizedBox(width: colOdlWidth, child: Text(drzewo.odl > 0 ? drzewo.odl.toStringAsFixed(2) : '-')),
+                  onTap: () {
+                    if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
+                  },
+                ),
+                DataCell(
+                  SizedBox(width: colAzymWidth, child: Text(drzewo.azymut != null ? drzewo.azymut!.toStringAsFixed(1) : '-')),
                   onTap: () {
                     if (globalIndex >= 0) _showDrzewoDialog(mode: DialogMode.edit, globalIndex: globalIndex, existingTree: drzewo);
                   },
@@ -1070,12 +1262,23 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
             numer: widget.powierzchnia.drzewa.length + 1, // <-- ADDED: Automatic next number
             powierzchniaNumer: widget.powierzchnia.numer,
             gatunek: _selectedDrzewoGatunek,
-            typ: 'zywe',
+
+            // --- UPDATED: Map format ---
+            typ: {'state': 'zywe', 'type': ''},
+
+            // --- UPDATED: Using your local variable ---
+            warstwa: _selectedWarstwa,
+
             srednica: diameter,
             wysokosc: 0.0,
+            odl: 0.0,
+            wiek: 0,
+            klasaRozkladu: 0,
+            notes: '',
           ),
         );
       });
+
 
       widget.onUpdate();
       _log('-> Received diameter: $diameter cm. Saved to surface ${widget.powierzchnia.numer}.');

@@ -5,6 +5,7 @@ class PowierzchniaModel {
   int nachylenie; // Default value set to 100
   List<DrzewoModel> drzewa;
   List<Gatunek> gatunki;
+  String notes; // <-- NEW PARAMETER
 
   PowierzchniaModel({
     required this.numer,
@@ -13,11 +14,13 @@ class PowierzchniaModel {
     int? nachylenie,
     List<DrzewoModel>? drzewa,
     List<Gatunek>? gatunki,
+    String? notes, // Optional in constructor
   })  : adres = adres ?? [],
         warstwa = warstwa ?? [],
         nachylenie = nachylenie ?? 100, // Defaults to 100 if not provided
         drzewa = drzewa ?? [],
-        gatunki = gatunki ?? [];
+        gatunki = gatunki ?? [],
+        notes = notes ?? ''; // Defaults to empty string
 
   factory PowierzchniaModel.fromJson(Map<String, dynamic> json) {
     var drzewaFromJson = json['drzewa'] as List?;
@@ -64,6 +67,7 @@ class PowierzchniaModel {
       nachylenie: parsedNachylenie,
       drzewa: parsedDrzewa,
       gatunki: parsedGatunki,
+      notes: json['notes']?.toString() ?? '', // <-- Read notes from JSON safely
     );
   }
 
@@ -75,6 +79,7 @@ class PowierzchniaModel {
       'nachylenie': nachylenie,
       'drzewa': drzewa.map((d) => d.toJson()).toList(),
       'gatunki': gatunki.map((g) => g.toJson()).toList(),
+      'notes': notes, // <-- Save notes to JSON
     };
   }
 }
@@ -84,45 +89,67 @@ class DrzewoModel {
   final int numer;
   String powierzchniaNumer;
   String gatunek;
-  String typ;
+  Map<String, String> typ;
   String warstwa;
   double srednica;
   double wysokosc;
-  double? azymut; // <-- Make it nullable (double?)
+  double? azymut;
   double odl;
   int wiek;
   int klasaRozkladu;
   bool wysRequired;
+  String notes; // <-- NEW PARAMETER
 
   DrzewoModel({
     required this.numer,
     required this.powierzchniaNumer,
     required this.gatunek,
     required this.typ,
-    this.warstwa = '',
-    this.srednica = 0.0,
-    this.wysokosc = 0.0,
-    this.azymut, // <-- Optional, defaults to null if not provided
-    this.odl = 0.0,
-    this.wiek = 0,
-    this.klasaRozkladu = 0,
+    required this.warstwa,
+    required this.srednica,
+    required this.wysokosc,
+    this.azymut,
+    required this.odl,
+    required this.wiek,
+    required this.klasaRozkladu,
     this.wysRequired = false,
+    this.notes = '',
   });
 
   factory DrzewoModel.fromJson(Map<String, dynamic> json) {
+    // --- SAFELY PARSE THE NEW MAP TYPE ---
+    Map<String, String> parsedTyp = {'state': 'zywe', 'type': ''}; // Fallback default
+
+    if (json['typ'] is Map) {
+      // If it's already saved in the new Map format, cast it directly
+      parsedTyp = Map<String, String>.from(json['typ'] as Map);
+    } else if (json['typ'] is String) {
+      // Legacy support: Convert old String format to the new Map format
+      String legacyTyp = json['typ'].toString();
+      if (legacyTyp == 'zywe') {
+        parsedTyp = {'state': 'zywe', 'type': ''};
+      } else {
+        // If it was 'martwe', 'posusz', 'zlomy', etc.
+        parsedTyp = {
+          'state': 'martwe',
+          'type': legacyTyp == 'martwe' ? '' : legacyTyp
+        };
+      }
+    }
+
     return DrzewoModel(
       numer: json['numer'] ?? 0,
       powierzchniaNumer: json['powierzchnia_numer']?.toString() ?? '',
       gatunek: json['gatunek']?.toString() ?? '',
-      typ: json['typ']?.toString() ?? 'zywe',
+      typ: parsedTyp, // <-- Use the safely parsed map
       warstwa: json['warstwa']?.toString() ?? '',
       srednica: (json['srednica'] ?? 0.0).toDouble(),
       wysokosc: (json['wysokosc'] ?? 0.0).toDouble(),
-      // Read as nullable double from JSON
       azymut: json['azymut'] != null ? (json['azymut']).toDouble() : null,
       odl: (json['odl'] ?? 0.0).toDouble(),
       wiek: json['wiek'] ?? 0,
       klasaRozkladu: json['klasa_rozkladu'] ?? 0,
+      notes: json['notes']?.toString() ?? '', // <-- Load notes
     );
   }
 
@@ -131,14 +158,15 @@ class DrzewoModel {
       'numer': numer,
       'powierzchnia_numer': powierzchniaNumer,
       'gatunek': gatunek,
-      'typ': typ,
+      'typ': typ, // Dart automatically handles Map to JSON encoding
       'warstwa': warstwa,
       'srednica': srednica,
       'wysokosc': wysokosc,
-      'azymut': azymut, // Can save as null to the database/json
+      'azymut': azymut,
       'odl': odl,
       'wiek': wiek,
       'klasa_rozkladu': klasaRozkladu,
+      'notes': notes, // <-- Save notes
     };
   }
 }

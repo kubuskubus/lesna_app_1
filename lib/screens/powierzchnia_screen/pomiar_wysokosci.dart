@@ -10,12 +10,25 @@ class PomiarWysokosci {
     _groupTrees();
   }
 
-  /// Groups the trees from the surface based on species, age, and type (zywe/martwe)
+  /// HELPER: Determines if a tree's specific type belongs to the general category ('zywe' or 'martwe')
+  bool _isMatchingCategory(String treeTyp, String category) {
+    if (category == 'zywe') {
+      return treeTyp == 'zywe';
+    } else if (category == 'martwe') {
+      return ['martwe', 'posusz', 'zlomy', 'wywroty', 'fragmenty'].contains(treeTyp);
+    }
+    return treeTyp == category; // Fallback
+  }
+
+  /// Groups the trees from the surface based on species, age, and general category (zywe/martwe)
   void _groupTrees() {
     groupedTrees.clear();
 
     for (var drzewo in powierzchnia.drzewa) {
-      final String key = '${drzewo.gatunek}_${drzewo.wiek}_${drzewo.typ}';
+      // Read the general category ('zywe' or 'martwe') directly from the new Map
+      String category = drzewo.typ['state'] ?? 'zywe';
+
+      final String key = '${drzewo.gatunek}_${drzewo.wiek}_$category';
 
       if (!groupedTrees.containsKey(key)) {
         groupedTrees[key] = [];
@@ -29,13 +42,11 @@ class PomiarWysokosci {
   List<DrzewoModel> getTreesFor({
     required String gatunek,
     required int wiek,
-    required String typ, // 'zywe' or 'martwe'
+    required String typ, // 'zywe' or 'martwe' category
   }) {
     final String key = '${gatunek}_${wiek}_${typ}';
     return groupedTrees[key] ?? [];
   }
-
-
 
   /// Main entry point: Routes to the appropriate function based on the active mode
   List<DrzewoModel> getPreparedTreesForBuilder({
@@ -46,9 +57,18 @@ class PomiarWysokosci {
     required String defaultGatunekWysokosc,
     required int defaultWiekWysokosc,
   }) {
+
+
+    List<DrzewoModel> allTreesHeight = allTrees.where((tree) {
+      bool isMartwe = tree.typ['state'] == 'martwe';
+      bool isZyweStandard = tree.typ['state'] == 'zywe' && tree.typ['type'] == '';
+
+      return isMartwe || isZyweStandard;
+    }).toList();
+
     if (isWysokoscPomiarActive) {
       return getTreesForHeightMeasurement(
-        allTrees: allTrees,
+        allTrees: allTreesHeight,
         typDrzewa: typDrzewa,
         selectedWarstwa: selectedWarstwa,
         defaultGatunekWysokosc: defaultGatunekWysokosc,
@@ -73,7 +93,16 @@ class PomiarWysokosci {
     List<DrzewoModel> targetTrees = allTrees.where((tree) {
       bool matchesWarstwa = (selectedWarstwa == 'Wszyst.') ||
           (tree.warstwa.toString() == selectedWarstwa || tree.warstwa.toString().isEmpty);
-      bool matchesTyp = tree.typ == typDrzewa;
+
+      // --- UPDATED: Handle 3 distinct cases for tree types ---
+      bool matchesTyp;
+      if (typDrzewa == 'gwozdz') {
+        matchesTyp = tree.typ['state'] == 'zywe' && tree.typ['type'] == 'gwozdz';
+      } else if (typDrzewa == 'zywe') {
+        matchesTyp = tree.typ['state'] == 'zywe' && tree.typ['type'] == '';
+      } else {
+        matchesTyp = tree.typ['state'] == typDrzewa;
+      }
 
       return matchesWarstwa && matchesTyp;
     }).toList();
@@ -86,8 +115,6 @@ class PomiarWysokosci {
     return targetTrees;
   }
 
-  /// FUNCTION 2: Executed when isWysokoscPomiarActive == TRUE
-  /// Routes all trees to the specific handler based on the selected mode.
   /// FUNCTION 2: Executed when isWysokoscPomiarActive == TRUE
   /// Routes all trees to the specific handler based on the selected mode.
   List<DrzewoModel> getTreesForHeightMeasurement({
@@ -123,8 +150,9 @@ class PomiarWysokosci {
       bool matchesWarstwa = (selectedWarstwa == 'Wszyst.') ||
           (tree.warstwa.toString() == selectedWarstwa || tree.warstwa.toString().isEmpty);
 
-      // Strictly force 'zywe' regardless of the tab parameter
-      bool matchesTyp = tree.typ == 'zywe';
+      // --- UPDATED: Strictly force 'zywe' using the new Map structure ---
+      // --- UPDATED: Strictly force 'zywe' (excluding gwozdz) using the new Map structure ---
+      bool matchesTyp = tree.typ['state'] == 'zywe' && tree.typ['type'] == '';
 
       return matchesWarstwa && matchesTyp;
     }).toList();
@@ -156,11 +184,22 @@ class PomiarWysokosci {
     required String gatunek,
     required int wiek,
   }) {
-    // 1. Filter strictly by layer, type, and specific species/age (for target trees to evaluate)
+
+    // 1. Filter trees to get all trees of specific type, gatunek, and wiek (excluding 'gwozdz')
     List<DrzewoModel> targetTrees = allTrees.where((tree) {
       bool matchesWarstwa = (selectedWarstwa == 'Wszyst.') ||
           (tree.warstwa.toString() == selectedWarstwa || tree.warstwa.toString().isEmpty);
-      bool matchesTyp = tree.typ == typDrzewa;
+
+      // Explicitly check 'zywe' (excluding gwozdz) and 'martwe'
+      bool matchesTyp;
+      if (typDrzewa == 'zywe') {
+        matchesTyp = tree.typ['state'] == 'zywe' && tree.typ['type'] == '';
+      } else if (typDrzewa == 'martwe') {
+        matchesTyp = tree.typ['state'] == 'martwe';
+      } else {
+        matchesTyp = false;
+      }
+
       bool matchesGatunek = (tree.gatunek == gatunek && tree.wiek == wiek);
 
       return matchesWarstwa && matchesTyp && matchesGatunek;
@@ -177,7 +216,16 @@ class PomiarWysokosci {
     int baseTreesCount = allTrees.where((tree) {
       bool matchesWarstwa = (selectedWarstwa == 'Wszyst.') ||
           (tree.warstwa.toString() == selectedWarstwa || tree.warstwa.toString().isEmpty);
-      bool matchesTyp = tree.typ == typDrzewa;
+
+      // --- UPDATED: Explicitly check 'zywe' (excluding gwozdz) and 'martwe' ---
+      bool matchesTyp;
+      if (typDrzewa == 'zywe') {
+        matchesTyp = tree.typ['state'] == 'zywe' && tree.typ['type'] == '';
+      } else if (typDrzewa == 'martwe') {
+        matchesTyp = tree.typ['state'] == 'martwe';
+      } else {
+        matchesTyp = false;
+      }
 
       return matchesWarstwa && matchesTyp;
     }).length;
@@ -202,7 +250,7 @@ class PomiarWysokosci {
         }
       } else {
         int midRight = n ~/ 2;
-        int midLeft = midRight - 1;
+        int midLeft = midRight - 1; // Fixed the syntax error here
 
         closestSubgroup[midLeft].wysRequired = true;
         closestSubgroup[midRight].wysRequired = true;
