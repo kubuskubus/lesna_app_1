@@ -98,7 +98,8 @@ class DrzewoModel {
   int wiek;
   int klasaRozkladu;
   bool wysRequired;
-  String notes; // <-- NEW PARAMETER
+  String notes;
+  List<String> listDates; // <-- NEW PARAMETER
 
   DrzewoModel({
     required this.numer,
@@ -114,6 +115,7 @@ class DrzewoModel {
     required this.klasaRozkladu,
     this.wysRequired = false,
     this.notes = '',
+    this.listDates = const [], // <-- Defaults to empty list
   });
 
   factory DrzewoModel.fromJson(Map<String, dynamic> json) {
@@ -132,16 +134,22 @@ class DrzewoModel {
         // If it was 'martwe', 'posusz', 'zlomy', etc.
         parsedTyp = {
           'state': 'martwe',
-          'type': legacyTyp == 'martwe' ? '' : legacyTyp
+          'type': legacyTyp == 'martwe' ? '' : legacyTyp,
         };
       }
     }
+
+    // --- SAFELY PARSE LIST OF DATES ---
+    var datesFromJson = json['list_dates'] as List?;
+    List<String> parsedDates = datesFromJson != null
+        ? datesFromJson.map((e) => e.toString()).toList()
+        : [];
 
     return DrzewoModel(
       numer: json['numer'] ?? 0,
       powierzchniaNumer: json['powierzchnia_numer']?.toString() ?? '',
       gatunek: json['gatunek']?.toString() ?? '',
-      typ: parsedTyp, // <-- Use the safely parsed map
+      typ: parsedTyp,
       warstwa: json['warstwa']?.toString() ?? '',
       srednica: (json['srednica'] ?? 0.0).toDouble(),
       wysokosc: (json['wysokosc'] ?? 0.0).toDouble(),
@@ -149,7 +157,9 @@ class DrzewoModel {
       odl: (json['odl'] ?? 0.0).toDouble(),
       wiek: json['wiek'] ?? 0,
       klasaRozkladu: json['klasa_rozkladu'] ?? 0,
-      notes: json['notes']?.toString() ?? '', // <-- Load notes
+      wysRequired: json['wys_required'] ?? false,
+      notes: json['notes']?.toString() ?? '',
+      listDates: parsedDates, // <-- Load list of dates
     );
   }
 
@@ -158,7 +168,7 @@ class DrzewoModel {
       'numer': numer,
       'powierzchnia_numer': powierzchniaNumer,
       'gatunek': gatunek,
-      'typ': typ, // Dart automatically handles Map to JSON encoding
+      'typ': typ,
       'warstwa': warstwa,
       'srednica': srednica,
       'wysokosc': wysokosc,
@@ -166,7 +176,9 @@ class DrzewoModel {
       'odl': odl,
       'wiek': wiek,
       'klasa_rozkladu': klasaRozkladu,
-      'notes': notes, // <-- Save notes
+      'wys_required': wysRequired,
+      'notes': notes,
+      'list_dates': listDates, // <-- Save list of dates
     };
   }
 }
@@ -199,6 +211,8 @@ class WydzielenieModel {
   final String numPp;
   final String adressLes;
   final String numWydz;
+  final int sampleIntNum;
+  final int arodesIntNum;
   final List<Gatunek> listOfTrees;
 
   // Fields are marked as final because this model is strictly read-only
@@ -206,6 +220,8 @@ class WydzielenieModel {
     required this.numPp,
     required this.adressLes,
     required this.numWydz,
+    required this.sampleIntNum,
+    required this.arodesIntNum,
     required this.listOfTrees,
   });
 
@@ -219,6 +235,8 @@ class WydzielenieModel {
       numPp: json['num_pp']?.toString() ?? '',
       adressLes: json['adress_les']?.toString() ?? '',
       numWydz: json['num_wydz']?.toString() ?? '',
+      sampleIntNum: int.tryParse(json['sample_int_num']?.toString() ?? '') ?? 0,
+      arodesIntNum: int.tryParse(json['arodes_int_num']?.toString() ?? '') ?? 0,
       listOfTrees: parsedTrees,
     );
   }
@@ -228,6 +246,8 @@ class WydzielenieModel {
       'num_pp': numPp,
       'adress_les': adressLes,
       'num_wydz': numWydz,
+      'sample_int_num': sampleIntNum,
+      'arodes_int_num': arodesIntNum,
       'list_of_trees': listOfTrees.map((t) => t.toJson()).toList(),
     };
   }

@@ -622,6 +622,15 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
       return;
     }
 
+    // 1. Copy prior dates if editing, or start empty if new
+    List<String> updatedDates = (currentMode == DialogMode.edit && widget.existingTree != null)
+        ? List<String>.from(widget.existingTree!.listDates)
+        : [];
+
+    // 2. Append the current timestamp
+    final String currentDate = DateTime.now().toIso8601String();
+    updatedDates.add(currentDate);
+
     // If the text field is empty, inputtedAzymut becomes null naturally
     final double? inputtedAzymut = double.tryParse(_azymutController.text.replaceAll(',', '.'));
 
@@ -661,13 +670,11 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
       azymut: inputtedAzymut,
       odl: double.tryParse(_odlController.text.replaceAll(',', '.')) ?? 0.0,
       wiek: int.tryParse(_wiekController.text) ?? 0,
-
       klasaRozkladu: (currentMode == DialogMode.edit && widget.existingTree != null)
           ? widget.existingTree!.klasaRozkladu
           : 0,
-
-      // --- UPDATED: Save the note directly from the controller ---
       notes: _notatkaController.text.trim(),
+      listDates: updatedDates, // <-- PASS THE UPDATED LIST HERE
     );
 
     setState(() {
