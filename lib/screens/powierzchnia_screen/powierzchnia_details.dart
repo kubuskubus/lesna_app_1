@@ -6,6 +6,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:lesna_app_1/screens/powierzchnia_screen/pomiar_wysokosci.dart';
 import '../../data_handler/data_handler.dart';
 import 'drzewo_dialog.dart';
+import '../grafic_sketch/grafic_sketch.dart';
 import 'kontrola_powierzchni.dart';
 import 'powierzchnia_model.dart';
 import '../../connector/bluetooth_service.dart';
@@ -122,23 +123,105 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     super.dispose();
   }
 
+  // --- HELPER FUNCTIONS ---
+  void _syncGatunkiFromWydzData() {
+    if (widget.wydzData == null || widget.wydzData!.listOfTrees.isEmpty) return;
 
+    bool hasChanges = false;
+
+    for (var treeGatunek in widget.wydzData!.listOfTrees) {
+      String nazwa = treeGatunek.nazwa.trim().toUpperCase();
+      int wiek = treeGatunek.wiek;
+
+      if (nazwa.isNotEmpty) {
+        // Check if this exact species AND age combination already exists in powierzchnia.gatunki
+        bool exists = widget.powierzchnia.gatunki.any(
+              (g) => g.nazwa.trim().toUpperCase() == nazwa && g.wiek == wiek,
+        );
+
+        // If it doesn't exist, add it
+        if (!exists) {
+          widget.powierzchnia.gatunki.add(Gatunek(nazwa: nazwa, wiek: wiek));
+          hasChanges = true;
+        }
+      }
+    }
+
+    // Save and refresh UI only if new species were actually added
+    if (hasChanges) {
+      setState(() {});
+      widget.onUpdate(); // Triggers the save function passed from the parent widget
+    }
+  }
+
+
+
+  // @override
+  // Widget build(BuildContext context) {
+  //   return Scaffold(
+  //     appBar: _buildAppBar(context),
+  //     body: Padding(
+  //       // Changed to only() to keep sides at 16, but reduce the top gap
+  //       padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 16.0, top: 0.0),
+  //       child: Column(
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         children: [
+  //           // --- NEW: Expandable Gatunek List ---
+  //           _buildWysokoscToggleAndGatunek(),
+  //           const SizedBox(height: 4), // Small spacing before tabs
+  //           _buildContentArea(),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
+
+// ... inside your StatefulWidget/StatelessWidget
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: _buildAppBar(context),
-      body: Padding(
-        // Changed to only() to keep sides at 16, but reduce the top gap
-        padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 16.0, top: 0.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // --- NEW: Expandable Gatunek List ---
-            _buildWysokoscToggleAndGatunek(),
-            const SizedBox(height: 4), // Small spacing before tabs
-            _buildContentArea(),
-          ],
+      body: SafeArea( // 1. Prevents overlap with Android bottom gesture bar
+        child: Padding(
+          // 2. Increase 'bottom' (e.g., from 16.0 to 32.0 or 40.0) to move the button higher
+          padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 32.0, top: 0.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // --- NEW: Expandable Gatunek List ---
+              _buildWysokoscToggleAndGatunek(),
+              const SizedBox(height: 4), // Small spacing before tabs
+
+              // Call _buildContentArea() directly (since it already returns an Expanded!)
+              _buildContentArea(),
+
+              const SizedBox(height: 12),
+
+              // Button at the lower side of the screen
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => GraficSketchScreen(
+                          powierzchnia: widget.powierzchnia,
+                          wydzData: widget.wydzData,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.draw),
+                  label: const Text('Szkic Graficzny (11.28 m)'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -165,113 +248,13 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     }
   }
 
-  void _inputNachylenieValue() {
-    // Reset transient state left over from a previous visit
-    _isMeasurementModeActive = false;
-    _currentMeasurementIndex = -1;
-    _isBatchDialogOpen = false;
-    _isDrzewoDialogOpen = false;
-    _isWysokoscPomiarActive = false;
-    _defaultGatunekWysokosc = 'Najgrubsze';
-    _defaultWiekWysokosc = 0;
-
-    // Make sure the selected layer still exists in this powierzchnia
-    final warstwy = widget.powierzchnia.warstwa;
-    if (warstwy.isNotEmpty && !warstwy.contains(_selectedWarstwa)) {
-      _selectedWarstwa = warstwy.first;
-    }
-
-    // Check if nachylenie is 100 and prompt for a new value
-    if (widget.powierzchnia.nachylenie == 100) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-
-        int? _selectedNachylenie; // Local variable to hold the dropdown state
-        final List<int> _availableValues = [0, 5, 10, 15, 20, 25, 30, 35];
-
-        showDialog(
-          context: context,
-          barrierDismissible: false, // User must select a value
-          builder: (BuildContext dialogContext) {
-            // StatefulBuilder is required here so the Dropdown updates visually when changed
-            return StatefulBuilder(
-              builder: (context, setStateDialog) {
-                return PopScope(
-                  canPop: false, // Replaces WillPopScope to prevent Android back button
-                  child: AlertDialog(
-                    title: const Text('Wprowadź nachylenie'),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('Wybierz wartość nachylenia z listy:'),
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<int>(
-                          value: _selectedNachylenie,
-                          decoration: const InputDecoration(
-                            labelText: 'Nachylenie',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: _availableValues.map((int value) {
-                            return DropdownMenuItem<int>(
-                              value: value,
-                              child: Text(value.toString()),
-                            );
-                          }).toList(),
-                          onChanged: (int? newValue) {
-                            // Update the local dialog state
-                            setStateDialog(() {
-                              _selectedNachylenie = newValue;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    actions: [
-                      ElevatedButton(
-                        onPressed: () async {
-                          if (_selectedNachylenie == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Proszę wybrać wartość z listy')),
-                            );
-                            return;
-                          }
-
-                          // 1. Save the new value to your powierzchnia model
-                          setState(() {
-                            widget.powierzchnia.nachylenie = _selectedNachylenie!;
-                          });
-
-                          // 2. Save the change to the JSON file using your widget's callback
-                          if (widget.onUpdate != null) {
-                            widget.onUpdate!();
-                          }
-                          // Note: If onUpdate doesn't handle the file save directly,
-                          // call your file service here, e.g.:
-                          // await TwojSerwisPlikow.zapiszPowierzchnie(widget.powierzchnia);
-
-                          if (mounted) {
-                            Navigator.of(dialogContext).pop();
-                          }
-                        },
-                        child: const Text('Zapisz'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
-        );
-      });
-    }
-  }
 
   void _setMaxPromienPowierzchni() {
     final int nachylenie = widget.powierzchnia.nachylenie;
 
     setState(() {
       if (nachylenie == 100) {
-        _maxRadiusSurface = 11.28; // Default fallback for empty state
+        widget.powierzchnia.maxRadius = 11.28; // Default fallback for empty state
       } else {
         // Integer division by 5 rounds down to the nearest multiple of 5
         // (e.g., 0-4 becomes 0, 5-9 becomes 5, 12 becomes 10)
@@ -279,29 +262,29 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
         switch (baseNachylenie) {
           case 0:
-            _maxRadiusSurface = 11.28;
+            widget.powierzchnia.maxRadius = 11.28;
             break;
           case 5:
-            _maxRadiusSurface = 11.30;
+            widget.powierzchnia.maxRadius = 11.30;
             break;
           case 10:
-            _maxRadiusSurface = 11.37;
+            widget.powierzchnia.maxRadius = 11.37;
             break;
           case 15:
-            _maxRadiusSurface = 11.48;
+            widget.powierzchnia.maxRadius = 11.48;
             break;
           case 20:
-            _maxRadiusSurface = 11.64;
+            widget.powierzchnia.maxRadius = 11.64;
             break;
           case 25:
-            _maxRadiusSurface = 11.85;
+            widget.powierzchnia.maxRadius = 11.85;
             break;
           case 30:
-            _maxRadiusSurface = 12.12;
+            widget.powierzchnia.maxRadius = 12.12;
             break;
           default:
           // Applies to 35 and any value higher than 35
-            _maxRadiusSurface = 12.46;
+            widget.powierzchnia.maxRadius = 12.46;
         }
       }
     });
@@ -322,114 +305,101 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
             const SizedBox(width: 4),
-
-            // --- Text Input for slope (nachylenie) ---
-            Container(
-              height: 36,
-              width: 75, // Fixed width to prevent the field from expanding infinitely
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade100,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.terrain, size: 16, color: Colors.black87),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: TextFormField(
-                      initialValue: widget.powierzchnia.nachylenie == 100
-                          ? ''
-                          : widget.powierzchnia.nachylenie.toString(),
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly], // Only allows integers
-                      style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
-                      decoration: const InputDecoration(
-                        hintText: '-',
-                        hintStyle: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      onChanged: (String val) {
-                        int? parsed = int.tryParse(val);
-                        if (parsed != null) {
-                          widget.powierzchnia.nachylenie = parsed;
-                          _setMaxPromienPowierzchni();
-                        } else if (val.isEmpty) {
-                          widget.powierzchnia.nachylenie = 100; // Reset to empty state
-                          _setMaxPromienPowierzchni();
-                        }
-                      },
-                    ),
-                  ),
-                  const Text('°', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
-                ],
-              ),
-            ),
-
+            _buildSlopeButton(),
             const SizedBox(width: 6),
-
-            // --- Dropdown for layers (warstwy) with dynamic 'Wszyst.' option ---
-            Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade100,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isDense: true,
-                  value: _selectedWarstwa,
-                  icon: const Icon(Icons.arrow_drop_down, color: Colors.black87, size: 20),
-                  style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
-                  items: [
-                    if (showWszystkieOption)
-                      const DropdownMenuItem<String>(
-                        value: 'Wszyst.',
-                        child: Text('Wszystkie warstwy'),
-                      ),
-                    ...widget.powierzchnia.warstwa.map((String warstwaStr) {
-                      return DropdownMenuItem<String>(
-                        value: warstwaStr,
-                        child: Text('Wydz. $warstwaStr'),
-                      );
-                    }),
-                  ],
-                  // --- UPDATED: Just point to the new function ---
-                  onChanged: _onWarstwaChanged,
-                ),
-              ),
-            ),
-
+            _buildLayerDropdown(showWszystkieOption),
             const SizedBox(width: 6),
-
-            // --- Add tree button ---
-            SizedBox(
-              height: 36,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade100,
-                  foregroundColor: Colors.black87,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                ),
-                onPressed: () => _showDrzewoDialog(
-                  mode: DialogMode.addSingle,
-                ),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Drz.', style: TextStyle(fontSize: 13)),
-              ),
-            ),
-
+            _buildAddTreeButton(),
             const SizedBox(width: 8),
           ],
         ),
       ),
       actions: const [],
+    );
+  }
+
+  Widget _buildSlopeButton() {
+    return GestureDetector(
+      onTap: _showSlopeSettingsDialog,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 10.0),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade100,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.orange.shade300),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.terrain, size: 16, color: Colors.black87),
+            const SizedBox(width: 6),
+            Text(
+              widget.powierzchnia.nachylenie == 100
+                  ? 'Nachylenie: -'
+                  : 'Nachylenie: ${widget.powierzchnia.nachylenie}°', // Removed azimuth here
+              style: const TextStyle(
+                color: Colors.black87,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLayerDropdown(bool showWszystkieOption) {
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade100,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isDense: true,
+          value: _selectedWarstwa,
+          icon: const Icon(Icons.arrow_drop_down, color: Colors.black87, size: 20),
+          style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13),
+          items: [
+            if (showWszystkieOption)
+              const DropdownMenuItem<String>(
+                value: 'Wszyst.',
+                child: Text('Wszystkie warstwy'),
+              ),
+            ...widget.powierzchnia.warstwa.map((String warstwaStr) {
+              return DropdownMenuItem<String>(
+                value: warstwaStr,
+                child: Text('Wydz. $warstwaStr'),
+              );
+            }),
+          ],
+          onChanged: _onWarstwaChanged,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddTreeButton() {
+    return SizedBox(
+      height: 36,
+      child: ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green.shade100,
+          foregroundColor: Colors.black87,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        ),
+        onPressed: () => _showDrzewoDialog(
+          mode: DialogMode.addSingle,
+        ),
+        icon: const Icon(Icons.add, size: 16),
+        label: const Text('Drz.', style: TextStyle(fontSize: 13)),
+      ),
     );
   }
 
@@ -564,6 +534,94 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                 });
                 widget.onUpdate(); // Ensure it saves to the main file
                 Navigator.pop(context);
+              },
+              child: const Text('Zapisz'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showSlopeSettingsDialog() {
+    final TextEditingController nachylenieController = TextEditingController(
+      text: widget.powierzchnia.nachylenie == 100 ? '' : widget.powierzchnia.nachylenie.toString(),
+    );
+    final TextEditingController azymutController = TextEditingController(
+      text: widget.powierzchnia.azymutNachylenia == 1000.0
+          ? ''
+          : widget.powierzchnia.azymutNachylenia.toStringAsFixed(0),
+    );
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Parametry nachylenia powierzchni'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nachylenieController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'Nachylenie (°)',
+                  border: OutlineInputBorder(),
+                  hintText: 'np. 15',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: azymutController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  // NEW: Restrict input value between 0 and 359
+                  TextInputFormatter.withFunction((oldValue, newValue) {
+                    if (newValue.text.isEmpty) {
+                      return newValue;
+                    }
+                    final int? parsed = int.tryParse(newValue.text);
+                    if (parsed == null || parsed > 359) {
+                      return oldValue; // Reject change if > 359
+                    }
+                    return newValue; // Accept change
+                  }),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Azymut nachylenia (°)',
+                  border: OutlineInputBorder(),
+                  hintText: '0 - 359', // Updated hint text
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Anuluj'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade200,
+                foregroundColor: Colors.black87,
+              ),
+              onPressed: () {
+                setState(() {
+                  // Parse nachylenie, default to 100 if empty
+                  int? parsedNachylenie = int.tryParse(nachylenieController.text.trim());
+                  widget.powierzchnia.nachylenie = parsedNachylenie ?? 100;
+
+                  // Parse azymut, default to 0.0 if empty
+                  double? parsedAzymut = double.tryParse(azymutController.text.trim());
+                  widget.powierzchnia.azymutNachylenia = parsedAzymut ?? 0.0;
+
+                  // Recalculate max radius based on the new slope
+                  _setMaxPromienPowierzchni();
+                });
+                Navigator.of(dialogContext).pop();
               },
               child: const Text('Zapisz'),
             ),
@@ -998,8 +1056,14 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                       onPressed: () {
                         if (globalIndex >= 0) {
                           setState(() {
+                            // 1. Remove the tree
                             widget.powierzchnia.drzewa.removeAt(globalIndex);
+
+                            // 2. NEW: Recalculate completion status since the tree list changed
+                            KontrolaPowierzchni.updateSingleSurfaceCompletion(widget.powierzchnia);
                           });
+
+                          // 3. Save the updated surface (and its new status) to memory
                           widget.onUpdate();
                         }
                       },
@@ -1118,13 +1182,13 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     int? globalIndex,
     DrzewoModel? existingTree,
   }) {
-    // --- Check the slope (nachylenie) before opening the dialog ---
-    if (widget.powierzchnia.nachylenie == 100) {
+    // --- Check if either nachylenie or azymutNachylenia is unset ---
+    if (widget.powierzchnia.nachylenie == 100 || widget.powierzchnia.azymutNachylenia == 1000.0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Brak nachylenia. Wybierz wartość nachylenia przed dodaniem drzewa.'),
+          content: Text('Brak pełnych danych nachylenia. Uzupełnij nachylenie i azymut przed dodaniem drzewa.'),
           backgroundColor: Colors.redAccent,
-          duration: Duration(seconds: 3),
+          duration: Duration(seconds: 4),
         ),
       );
       return; // Exit the function here - the dialog will not open
@@ -1157,7 +1221,12 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
           initialDynamicGatunki: _getDynamicGatunki(),
           selectedWarstwa: _selectedWarstwa, // <-- PASS THE SELECTED LAYER HERE
           onUpdate: () {
-            setState(() {});
+            setState(() {
+              // --- NEW: Update the completion status dynamically before saving ---
+              KontrolaPowierzchni.updateSingleSurfaceCompletion(widget.powierzchnia);
+            });
+
+            // Save to memory/JSON
             widget.onUpdate();
           },
         );
@@ -1319,37 +1388,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   }
 
 
-  // --- HELPER FUNCTIONS ---
 
-  void _syncGatunkiFromWydzData() {
-    if (widget.wydzData == null || widget.wydzData!.listOfTrees.isEmpty) return;
-
-    bool hasChanges = false;
-
-    for (var treeGatunek in widget.wydzData!.listOfTrees) {
-      String nazwa = treeGatunek.nazwa.trim().toUpperCase();
-      int wiek = treeGatunek.wiek;
-
-      if (nazwa.isNotEmpty) {
-        // Check if this species already exists in powierzchnia.gatunki
-        bool exists = widget.powierzchnia.gatunki.any(
-              (g) => g.nazwa.trim().toUpperCase() == nazwa,
-        );
-
-        // If it doesn't exist, add it
-        if (!exists) {
-          widget.powierzchnia.gatunki.add(Gatunek(nazwa: nazwa, wiek: wiek));
-          hasChanges = true;
-        }
-      }
-    }
-
-    // Save and refresh UI only if new species were actually added
-    if (hasChanges) {
-      setState(() {});
-      widget.onUpdate(); // Triggers the save function passed from the parent widget
-    }
-  }
 
 
   List<Gatunek> _getDynamicGatunki() {

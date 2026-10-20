@@ -39,6 +39,8 @@ class _AppMainScreenState extends State<AppMainScreen> {
   // Change these at the top of _AppMainScreenState
   List<WydzielenieModel> _allNumPp = [];
   List<WydzielenieModel> _filteredNumPp = [];
+  bool _showNotComplete = false;
+  bool _showComplete = false;
 
   @override
   void dispose() {
@@ -72,45 +74,9 @@ class _AppMainScreenState extends State<AppMainScreen> {
     }
   }
 
-  bool _isSurfaceCompleted(PowierzchniaModel powierzchnia) {
-    if (powierzchnia.drzewa.isEmpty) return false;
 
-    // Run the validation tests for the entire surface
-    // Pass your default maxRadius (11.28) or retrieve it dynamically if it's stored in the model
-    final wyniki = KontrolaPowierzchni.wykonajTestyKontrolne(
-      powierzchnia: powierzchnia,
-      selectedWarstwa: 'Wszyst.',
-      maxRadius: 11.28,
-    );
 
-    // Check general tests for regular trees
-    if (!wyniki.testSrednice ||
-        !wyniki.testAzymut ||
-        !wyniki.testOdl ||
-        !wyniki.testPromien ||
-        !wyniki.testNajgrubsze) {
-      return false;
-    }
-
-    // --- NEW: Check tests specifically for gwoździe (nails) ---
-    if (!wyniki.testGwozdzAzymut || !wyniki.testGwozdzOdl) {
-      return false;
-    }
-
-    // Check proportional group requirements for live trees
-    for (bool result in wyniki.testyWysokosciZywe.values) {
-      if (!result) return false;
-    }
-
-    // Check proportional group requirements for dead trees
-    for (bool result in wyniki.testyWysokosciMartwe.values) {
-      if (!result) return false;
-    }
-
-    return true; // All tests passed
-  }
-
-  // Reads all three files from memory and updates the UI
+// Reads all three files from memory and updates the UI
   Future<void> _loadDataFromHandler() async {
     setState(() {
       _isLoading = true; // Show loading indicator while reading
@@ -124,6 +90,10 @@ class _AppMainScreenState extends State<AppMainScreen> {
         setState(() {
           // 2. Fetch the mutable list directly from the handler
           _powierzchnieList = _dataHandler.powierzchnie;
+
+          // --- 3. NEW: Calculate and set completion status for all loaded surfaces ---
+          KontrolaPowierzchni.checkControlForAllSurfaces(_powierzchnieList);
+
           _isLoading = false;
         });
       }
@@ -182,6 +152,8 @@ class _AppMainScreenState extends State<AppMainScreen> {
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
+
+
 
   void _handleRefresh() async {
     await _loadDataFromHandler();
@@ -287,10 +259,11 @@ class _AppMainScreenState extends State<AppMainScreen> {
   Widget _buildBody() {
     return SingleChildScrollView(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch, // Ensure children span the full width
         children: [
           // 1. Search Bar
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
             child: TextField(
               controller: _searchController,
               onChanged: (query) {
@@ -328,7 +301,10 @@ class _AppMainScreenState extends State<AppMainScreen> {
             ),
           ),
 
-          // 2. The Unified Table
+          // 1a. NEW: Narrow 2-Column Button Bar (Touching the table below)
+          _buildDualActionButtons(),
+
+          // 2. The Unified Table (Sits flush right beneath the buttons)
           _buildUnifiedTable(
             child: _isSearching
                 ? _buildSearchListView() // Renders WydzielenieModel from JSON
@@ -336,6 +312,138 @@ class _AppMainScreenState extends State<AppMainScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Builds the narrow 2-column button bar with dynamic counts
+  Widget _buildDualActionButtons() {
+    // 1. Calculate counts dynamically from the loaded list
+    int incompleteCount = _powierzchnieList
+        .where((p) => p.completion['completion'] == 'notCompleted')
+        .length;
+
+    int completeCount = _powierzchnieList
+        .where((p) => p.completion['completion'] == 'Completed')
+        .length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 0.0),
+      child: Container(
+        height: 36.0, // Narrow height
+        width: double.infinity,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8.0),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // --- COLUMN 1 (Left Button - Niekompletne / Red) ---
+              Expanded(
+                child: Material(
+                  color: _showNotComplete ? Colors.red.shade400 : Colors.red.shade50,
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (_showNotComplete) {
+                          _showNotComplete = false;
+                        } else {
+                          _showNotComplete = true;
+                          _showComplete = false;
+                        }
+                      });
+                    },
+                    child: Center(
+                      child: Text(
+                        // 2. Display the count for incomplete surfaces
+                        'Niekompletne ($incompleteCount)',
+                        style: TextStyle(
+                          color: _showNotComplete ? Colors.white : Colors.red.shade900,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Vertical divider
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: Colors.grey.shade300,
+              ),
+
+              // --- COLUMN 2 (Right Button - Kompletne / Green) ---
+              Expanded(
+                child: Material(
+                  color: _showComplete ? Colors.green.shade400 : Colors.green.shade50,
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (_showComplete) {
+                          _showComplete = false;
+                        } else {
+                          _showComplete = true;
+                          _showNotComplete = false;
+                        }
+                      });
+                    },
+                    child: Center(
+                      child: Text(
+                        // 3. Display the count for complete surfaces
+                        'Kompletne ($completeCount)',
+                        style: TextStyle(
+                          color: _showComplete ? Colors.white : Colors.green.shade900,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+
+
+  Widget _buildMainListView() {
+    if (_powierzchnieList.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(24.0),
+        child: Text('Brak danych. Kliknij "Wczytaj" lub + aby dodać.', style: TextStyle(color: Colors.grey)),
+      );
+    }
+
+    // --- SORTING APPLIED HERE FOR MEMORY LIST ---
+    List<PowierzchniaModel> sortedList = _sortListItems<PowierzchniaModel>(
+      items: _powierzchnieList,
+      getNumer: (item) => item.numer,
+      // Simply read the saved state:
+      getCompletionStatus: (item) => item.completion['completion'] ?? 'notEdited',
+    );
+
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: sortedList.length,
+      separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade300),
+      itemBuilder: (context, index) {
+        final item = sortedList[index];
+
+        return _buildUnifiedTableRow(
+          index: index,
+          numer: item.numer,
+          adres: item.adres.join(', '),
+          isSearchResult: false,
+        );
+      },
     );
   }
 
@@ -347,47 +455,33 @@ class _AppMainScreenState extends State<AppMainScreen> {
       );
     }
 
+    // --- SORTING APPLIED HERE FOR SEARCH RESULTS ---
+    List<WydzielenieModel> sortedList = _sortListItems<WydzielenieModel>(
+      items: _filteredNumPp,
+      getNumer: (item) => item.numPp,
+      getCompletionStatus: (item) {
+        // Find if this JSON search result exists in the saved surfaces
+        int powIndex = _dataHandler.powierzchnie.indexWhere((p) => p.numer == item.numPp);
+        if (powIndex != -1) {
+          return _dataHandler.powierzchnie[powIndex].completion['completion'] ?? 'notEdited';
+        }
+        return 'notEdited'; // Not added yet counts as completely empty
+      },
+    );
+
     return ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: _filteredNumPp.length,
+      itemCount: sortedList.length,
       separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade300),
       itemBuilder: (context, index) {
-        final item = _filteredNumPp[index];
+        final item = sortedList[index];
 
-        // The unified row handles everything else internally!
         return _buildUnifiedTableRow(
           index: index,
           numer: item.numPp,
-          adres: item.adressLes,
+          adres: item.adressLes.join(', '),
           isSearchResult: true,
-        );
-      },
-    );
-  }
-
-  Widget _buildMainListView() {
-    if (_powierzchnieList.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(24.0),
-        child: Text('Brak danych. Kliknij "Wczytaj" lub + aby dodać.', style: TextStyle(color: Colors.grey)),
-      );
-    }
-
-    return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _powierzchnieList.length,
-      separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade300),
-      itemBuilder: (context, index) {
-        final item = _powierzchnieList[index];
-
-        // The unified row handles everything else internally!
-        return _buildUnifiedTableRow(
-          index: index,
-          numer: item.numer,
-          adres: item.adres.join(', '), // Joins elements like ["Adres 1", "Adres 2"] into "Adres 1, Adres 2"
-          isSearchResult: false,
         );
       },
     );
@@ -445,24 +539,19 @@ class _AppMainScreenState extends State<AppMainScreen> {
     bool existsInMainList = powIndex != -1;
 
     PowierzchniaModel? currentPowierzchnia;
-    bool hasTrees = false;
-    bool isCompleted = false; // <-- NEW FLAG
+    String completionStatus = 'notEdited'; // Default state
 
     if (existsInMainList) {
       currentPowierzchnia = _dataHandler.powierzchnie[powIndex];
-      hasTrees = currentPowierzchnia.drzewa.isNotEmpty;
-
-      // --- NEW: Evaluate completion only if it has trees ---
-      if (hasTrees) {
-        isCompleted = _isSurfaceCompleted(currentPowierzchnia);
-      }
+      // Read the pre-calculated completion status directly from the map
+      completionStatus = currentPowierzchnia.completion['completion'] ?? 'notEdited';
     }
 
-    // Determine row color based on completion status
+    // Determine row color based on the saved completion status
     Color rowColor = Colors.transparent;
-    if (isCompleted) {
+    if (completionStatus == 'Completed') {
       rowColor = Colors.green.shade50;
-    } else if (hasTrees) {
+    } else if (completionStatus == 'notCompleted') {
       rowColor = Colors.amber.shade50; // Work in progress
     }
 
@@ -497,26 +586,38 @@ class _AppMainScreenState extends State<AppMainScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.0),
       child: Material(
-        color: rowColor, // <-- APPLIED THE NEW DYNAMIC COLOR
+        color: rowColor, // <-- APPLIED THE STATUS-BASED DYNAMIC COLOR
         child: InkWell(
-          onTap: () {
+          onTap: () async { // 1. Make the onTap callback async
             if (isAdded && currentPowierzchnia != null) {
               int wydzIndex = _dataHandler.wydzList.indexWhere((w) => w.numPp == numer);
               WydzielenieModel? matchingWydz = wydzIndex >= 0 ? _dataHandler.wydzList[wydzIndex] : null;
-
-              Navigator.push(
+              // 2. Await the Navigator.push
+              await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => PowierzchniaDetailScreen(
                     powierzchnia: currentPowierzchnia!,
                     wydzData: matchingWydz,
-                    onUpdate: () async {
-                      setState(() {});
-                      await _dataHandler.savePowierzchnie();
+                    onUpdate: () {
+                      // This is still useful if you want to save to memory
+                      // while the user is actively working inside the Detail Screen.
+                      _dataHandler.savePowierzchnie();
                     },
                   ),
                 ),
               );
+
+              // 3. THIS BLOCK RUNS EVERY TIME YOU RETURN TO THE MAIN SCREEN
+              if (mounted) {
+                // Recalculate the status for everything
+                KontrolaPowierzchni.checkControlForAllSurfaces(_dataHandler.powierzchnie);
+                // Save it to the device
+                await _dataHandler.savePowierzchnie();
+                // Rebuild the table so the colors update instantly
+                setState(() {});
+              }
+
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -575,6 +676,64 @@ class _AppMainScreenState extends State<AppMainScreen> {
         ),
       ],
     );
+  }
+
+
+  /// Universal sorting helper for list items based on completion status & number order
+  List<T> _sortListItems<T>({
+    required List<T> items,
+    required String Function(T item) getNumer,
+    required String Function(T item) getCompletionStatus, // <-- NEW: Replaces boolean checks
+  }) {
+    // Create a mutable copy to sort
+    List<T> sortedList = List.from(items);
+
+    sortedList.sort((a, b) {
+      int getWeight(T item) {
+        // 1. If NEITHER button is selected -> all items have equal weight (0),
+        // so the list sorts strictly by number order
+        if (!_showNotComplete && !_showComplete) {
+          return 0;
+        }
+
+        String status = getCompletionStatus(item);
+
+        // 2. Empty surfaces (notEdited) always go last (weight 2)
+        if (status == 'notEdited') {
+          return 2;
+        }
+
+        // 3. Prioritize based on which button is active
+        if (_showNotComplete) {
+          // Niekompletne (0) -> Kompletne (1) -> Empty (2)
+          return status == 'Completed' ? 1 : 0;
+        } else {
+          // Kompletne (0) -> Niekompletne (1) -> Empty (2)
+          return status == 'Completed' ? 0 : 1;
+        }
+      }
+
+      int weightA = getWeight(a);
+      int weightB = getWeight(b);
+
+      // Primary sort: by category weight (only when a button is active)
+      if (weightA != weightB) {
+        return weightA.compareTo(weightB);
+      }
+
+      // Secondary sort: Numerical order by `numer` (or `numPp`)
+      int? numA = int.tryParse(getNumer(a).trim());
+      int? numB = int.tryParse(getNumer(b).trim());
+
+      if (numA != null && numB != null) {
+        return numA.compareTo(numB);
+      }
+
+      // Fallback to alphabetical comparison if not pure numbers
+      return getNumer(a).compareTo(getNumer(b));
+    });
+
+    return sortedList;
   }
 
 

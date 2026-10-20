@@ -42,6 +42,7 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
   String? srednicaError;
   String? wysokoscError;
   String? azymutError;
+  late String _selectedWarstwa; // <-- ADD THIS
 
   StreamSubscription<double>? _treeSubscription;
 
@@ -70,9 +71,16 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
           ? widget.existingTree!.azymut.toString()
           : '',
     );
-
+    // --- NEW: Initialize the selected layer ---
+    // Use the one passed from the parent screen. If it's 'Wszyst.',
+    // fallback to the first real layer so the user doesn't accidentally save 'Wszyst.' to a tree.
+    if (widget.selectedWarstwa == 'Wszyst.') {
+      _selectedWarstwa = widget.powierzchnia.warstwa.first;
+    } else {
+      _selectedWarstwa = widget.selectedWarstwa;
+    }
     _initializeDialogFields(currentMode, widget.existingTree);
-// Initialize it once when the widget is created
+    // Initialize it once when the widget is created
     if (currentMode == DialogMode.edit && currentGlobalIndex != null) {
       _numerDrzewaController.text = widget.powierzchnia.drzewa[currentGlobalIndex!].numer.toString();
     } else {
@@ -132,11 +140,13 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
       // Inside _initializeDialogFields:
       if (tree.typ['state'] == 'zywe') {
         if (tree.typ['type'] == 'gwozdz') {
-          _selectedDrzewoTyp = 'zywe_gwozdz'; // <-- Checks for the gwozdz type
+          _selectedDrzewoTyp = 'zywe_gwozdz'; // Restored to your original key
         } else {
           _selectedDrzewoTyp = 'zywe';
         }
       } else {
+        // Restored: Extract the specific dead tree type (posusz, zlom, wywrot),
+        // defaulting to 'posusz' if it's empty or null.
         _selectedDrzewoTyp = (tree.typ['type'] != null && tree.typ['type']!.isNotEmpty)
             ? tree.typ['type']!
             : 'posusz';
@@ -251,9 +261,6 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     return null;
   }
 
-  List<int> _getExistingTreeNumbers() {
-    return widget.powierzchnia.drzewa.map((drzewo) => drzewo.numer).toList();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -264,9 +271,20 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
       _selectedDrzewoGatunek = _localGatunki.first.nazwa;
       _wiekController.text = _localGatunki.first.wiek > 0 ? _localGatunki.first.wiek.toString() : '';
     }
-
-    // --- NEW: Check if 'gwozdz' is selected ---
+    // --- Check selected tree type ---
     bool isGwozdz = _selectedDrzewoTyp == 'zywe_gwozdz';
+    // Check if the selected type is in the list of dead tree types
+    bool isMartwe = ['posusz', 'wywrot', 'zlom', 'sciete', 'fragment'].contains(_selectedDrzewoTyp);
+    // --- Determine which specific fields to show ---
+    List<Widget> specificFields;
+    if (isGwozdz) {
+      specificFields = _buildGwozdzFields(verticalSpacing);
+    } else if (isMartwe) {
+      specificFields = _buildMartweFields(verticalSpacing, horizontalSpacing);
+    } else {
+      // Default to standard "Żywe" fields
+      specificFields = _buildZyweFields(verticalSpacing, horizontalSpacing);
+    }
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -278,33 +296,22 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Common Top Fields
               _buildNumerInput(),
               SizedBox(height: verticalSpacing),
-
               _buildStanDrzewaDropdown(),
               SizedBox(height: verticalSpacing),
 
-              // --- HIDE IF GWOZDZ ---
-              if (!isGwozdz) ...[
-                _buildGatunekRow(horizontalSpacing),
-                SizedBox(height: verticalSpacing),
-
-                _buildSrednicaInput(),
+              // --- NEW: Conditionally show Warstwa dropdown ---
+              if (widget.powierzchnia.warstwa.length > 1) ...[
+                _buildWarstwaDropdown(),
                 SizedBox(height: verticalSpacing),
               ],
 
-              _buildOdlegloscInput(),
-              SizedBox(height: verticalSpacing),
+              // Dynamically insert specific fields based on selection
+              ...specificFields,
 
-              _buildAzymutInput(),
-              SizedBox(height: verticalSpacing),
-
-              // --- HIDE IF GWOZDZ ---
-              if (!isGwozdz) ...[
-                _buildWysokoscInput(),
-                SizedBox(height: verticalSpacing),
-              ],
-
+              // Common Bottom Field
               _buildNotatkaInput(),
             ],
           ),
@@ -341,20 +348,21 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
 
   Widget _buildStanDrzewaDropdown() {
     return DropdownButtonFormField<String>(
+      isExpanded: true, // <-- FIX: Forces the dropdown to fit within parent bounds
       value: _selectedDrzewoTyp.isNotEmpty ? _selectedDrzewoTyp : 'zywe',
       decoration: InputDecoration(
         labelText: 'Stan drzewa',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
       ),
       items: const [
-        DropdownMenuItem(value: 'zywe', child: Text('Żywe')),
-        DropdownMenuItem(value: 'posusz', child: Text('Posusz (martwe stojące)')),
-        DropdownMenuItem(value: 'zlomy', child: Text('Złomy (stojące złamane)')),
-        DropdownMenuItem(value: 'wywroty', child: Text('Wywroty i ścięte (leżące)')),
-        DropdownMenuItem(value: 'fragmenty', child: Text('Fragmenty (kłody, gałęzie)')),
-        DropdownMenuItem(value: 'zywe_gwozdz', child: Text('Gwoździe')),
+        DropdownMenuItem(value: 'zywe', child: Text('Żywe', overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem(value: 'posusz', child: Text('POSUSZ - Martwe drewno stojące', overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem(value: 'wywrot', child: Text('WYWROT - Martwe drewno wywrócone', overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem(value: 'zlom', child: Text('ZLOM - Martwe drewno złamane', overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem(value: 'sciete', child: Text('SCIETE - Martwe drewno ścięte', overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem(value: 'fragment', child: Text('FRAGMENT - Fragment martwego drewna', overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem(value: 'zywe_gwozdz', child: Text('Gwoździe', overflow: TextOverflow.ellipsis)),
       ],
-      // Inside _buildStanDrzewaDropdown()
       onChanged: (String? val) {
         if (val != null) {
           setState(() {
@@ -365,6 +373,34 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
               _generateNextNumber();
               numerError = _checkNumerExists(_numerDrzewaController.text);
             }
+          });
+        }
+      },
+    );
+  }
+
+  Widget _buildWarstwaDropdown() {
+    return DropdownButtonFormField<String>(
+      isExpanded: true, // Forces the dropdown to fit within parent bounds
+      value: _selectedWarstwa.isNotEmpty
+          ? _selectedWarstwa
+      // Fallback to the first available layer if somehow empty
+          : widget.powierzchnia.warstwa.first,
+      decoration: InputDecoration(
+        labelText: 'Warstwa (Wydzielenie)',
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      // Dynamically map the list of layers from your PowierzchniaModel
+      items: widget.powierzchnia.warstwa.map((String warstwaStr) {
+        return DropdownMenuItem<String>(
+          value: warstwaStr,
+          child: Text('Wydz. $warstwaStr', overflow: TextOverflow.ellipsis),
+        );
+      }).toList(),
+      onChanged: (String? val) {
+        if (val != null) {
+          setState(() {
+            _selectedWarstwa = val;
           });
         }
       },
@@ -384,14 +420,7 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
               labelText: 'Gatunek',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            items: _localGatunki.map((gatunekObj) {
-              final String combinedLabel = '${gatunekObj.nazwa}${gatunekObj.wiek}';
-              final String uniqueKey = '${gatunekObj.nazwa}_${gatunekObj.wiek}';
-              return DropdownMenuItem<String>(
-                value: uniqueKey,
-                child: Text(combinedLabel),
-              );
-            }).toList(),
+            items: _buildGatunekDropdownItems(), // <-- Using the extracted method here
             onChanged: (String? val) {
               if (val != null) {
                 setState(() {
@@ -422,6 +451,25 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
         ),
       ],
     );
+  }
+
+  /// Extracts and generates the dropdown items for species (gatunki) and their age (wiek)
+  List<DropdownMenuItem<String>> _buildGatunekDropdownItems() {
+    final List<DropdownMenuItem<String>> items = [];
+
+    for (var gatunekObj in _localGatunki) {
+      final String combinedLabel = '${gatunekObj.nazwa}${gatunekObj.wiek}';
+      final String uniqueKey = '${gatunekObj.nazwa}_${gatunekObj.wiek}';
+
+      items.add(
+        DropdownMenuItem<String>(
+          value: uniqueKey,
+          child: Text(combinedLabel),
+        ),
+      );
+    }
+
+    return items;
   }
 
   Widget _buildSrednicaInput() {
@@ -486,8 +534,7 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
   }
 
   Widget _buildWysokoscInput() {
-    bool isMartwe = ['posusz', 'zlomy', 'wywroty', 'fragmenty'].contains(_selectedDrzewoTyp);
-
+    bool isMartwe = ['posusz', 'wywrot', 'zlom', 'sciete', 'fragment'].contains(_selectedDrzewoTyp);
     return TextField(
       controller: _wysokoscController,
       keyboardType: TextInputType.number,
@@ -542,6 +589,41 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
         onPressed: numerError != null ? null : () => _handleSaveTree(true),
         child: const Text('Dodaj następne', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
+    ];
+  }
+
+  List<Widget> _buildZyweFields(double verticalSpacing, double horizontalSpacing) {
+    return [
+      _buildGatunekRow(horizontalSpacing),
+      SizedBox(height: verticalSpacing),
+      _buildSrednicaInput(),
+      SizedBox(height: verticalSpacing),
+      _buildOdlegloscInput(),
+      SizedBox(height: verticalSpacing),
+      _buildAzymutInput(),
+      SizedBox(height: verticalSpacing),
+      _buildWysokoscInput(),
+      SizedBox(height: verticalSpacing),
+    ];
+  }
+
+  List<Widget> _buildMartweFields(double verticalSpacing, double horizontalSpacing) {
+    return [
+      _buildGatunekRow(horizontalSpacing),
+      SizedBox(height: verticalSpacing),
+      _buildSrednicaInput(),
+      SizedBox(height: verticalSpacing),
+      _buildWysokoscInput(),
+      SizedBox(height: verticalSpacing),
+    ];
+  }
+
+  List<Widget> _buildGwozdzFields(double verticalSpacing) {
+    return [
+      _buildOdlegloscInput(),
+      SizedBox(height: verticalSpacing),
+      _buildAzymutInput(),
+      SizedBox(height: verticalSpacing),
     ];
   }
 
@@ -647,7 +729,6 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     int inputtedNumer = int.tryParse(inputtedNumerText) ?? 0;
 
     // --- UPDATED: Convert the String dropdown value to the new Map structure ---
-    // it will save as zywe gwozdz -but it is treated as just gwozdz
     Map<String, String> parsedTypMap;
     if (_selectedDrzewoTyp == 'zywe') {
       parsedTypMap = {'state': 'zywe', 'type': ''};
@@ -662,9 +743,10 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
       powierzchniaNumer: widget.powierzchnia.numer,
       gatunek: _selectedDrzewoGatunek,
       typ: parsedTypMap,
-      warstwa: (currentMode == DialogMode.edit && widget.existingTree != null)
-          ? widget.existingTree!.warstwa
-          : widget.selectedWarstwa,
+
+      // --- UPDATED HERE: Now it correctly uses the dropdown's selected value ---
+      warstwa: _selectedWarstwa,
+
       srednica: double.tryParse(_srednicaController.text.replaceAll(',', '.')) ?? 0.0,
       wysokosc: double.tryParse(_wysokoscController.text.replaceAll(',', '.')) ?? 0.0,
       azymut: inputtedAzymut,
@@ -674,7 +756,7 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
           ? widget.existingTree!.klasaRozkladu
           : 0,
       notes: _notatkaController.text.trim(),
-      listDates: updatedDates, // <-- PASS THE UPDATED LIST HERE
+      listDates: updatedDates,
     );
 
     setState(() {
@@ -695,7 +777,7 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
         _azymutController.clear();
         _odlController.clear();
 
-        // --- UPDATED: Clear the note for the next tree ---
+        // Clear the note for the next tree
         _notatkaController.clear();
 
         _generateNextNumber();
