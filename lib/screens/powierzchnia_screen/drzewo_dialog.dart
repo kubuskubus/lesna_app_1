@@ -66,20 +66,35 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     currentMode = widget.initialMode;
     currentGlobalIndex = widget.initialGlobalIndex;
     _localGatunki = List.from(widget.initialDynamicGatunki);
+
     _azymutController = TextEditingController(
       text: widget.existingTree?.azymut != null
-          ? widget.existingTree!.azymut.toString()
+          ? widget.existingTree!.azymut!.toStringAsFixed(0) // Safely handles 0
           : '',
     );
-    // --- NEW: Initialize the selected layer ---
-    // Use the one passed from the parent screen. If it's 'Wszyst.',
-    // fallback to the first real layer so the user doesn't accidentally save 'Wszyst.' to a tree.
-    if (widget.selectedWarstwa == 'Wszyst.') {
-      _selectedWarstwa = widget.powierzchnia.warstwa.first;
+
+    // --- UPDATED: Initialize the selected layer ---
+    if (currentMode == DialogMode.edit && widget.existingTree != null) {
+      // 1. If editing an existing tree, load its assigned warstwa
+      _selectedWarstwa = widget.existingTree!.warstwa;
+
+      // Safety check: if for some reason the tree's layer is not in the surface's layer list
+      if (!widget.powierzchnia.warstwa.contains(_selectedWarstwa)) {
+        _selectedWarstwa = widget.powierzchnia.warstwa.isNotEmpty
+            ? widget.powierzchnia.warstwa.first
+            : '';
+      }
     } else {
-      _selectedWarstwa = widget.selectedWarstwa;
+      // 2. If adding a new tree, use the parent screen's active filter
+      if (widget.selectedWarstwa == 'Wszyst.') {
+        _selectedWarstwa = widget.powierzchnia.warstwa.first;
+      } else {
+        _selectedWarstwa = widget.selectedWarstwa;
+      }
     }
+
     _initializeDialogFields(currentMode, widget.existingTree);
+
     // Initialize it once when the widget is created
     if (currentMode == DialogMode.edit && currentGlobalIndex != null) {
       _numerDrzewaController.text = widget.powierzchnia.drzewa[currentGlobalIndex!].numer.toString();
@@ -113,25 +128,7 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
     super.dispose();
   }
 
-  void _generateNextNumber() {
-    bool isGwozdz = _selectedDrzewoTyp == 'zywe_gwozdz';
 
-    // 1. Filter the trees to match the current numbering sequence
-    var relevantTrees = widget.powierzchnia.drzewa.where((tree) {
-      bool isTreeGwozdz = tree.typ['state'] == 'zywe' && tree.typ['type'] == 'gwozdz';
-
-      // If we are adding a gwozdz, only look at gwozdz numbers.
-      // Otherwise, look at all regular trees (dead, alive, broken, etc.)
-      return isGwozdz ? isTreeGwozdz : !isTreeGwozdz;
-    }).toList();
-
-    // 2. Find the highest number in that specific filtered list
-    int maxNumer = relevantTrees.isNotEmpty
-        ? relevantTrees.map((e) => e.numer).reduce((a, b) => a > b ? a : b)
-        : 0;
-
-    _numerDrzewaController.text = (maxNumer + 1).toString();
-  }
 
   void _initializeDialogFields(DialogMode mode, DrzewoModel? tree) {
     if (mode == DialogMode.edit && tree != null) {
@@ -156,7 +153,7 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
       _wysokoscController.text = tree.wysokosc > 0 ? tree.wysokosc.toString().replaceAll('.', ',') : '';
 
       // Safely handle nullable double? azymut
-      _azymutController.text = (tree.azymut != null && tree.azymut! > 0)
+      _azymutController.text = tree.azymut != null
           ? tree.azymut!.toStringAsFixed(0)
           : '';
 
@@ -188,11 +185,17 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
 
     if (inputtedNumer != null) {
       bool isGwozdz = _selectedDrzewoTyp == 'zywe_gwozdz';
+      bool isMartwe = ['posusz', 'wywrot', 'zlom', 'sciete', 'fragment'].contains(_selectedDrzewoTyp);
 
-      // 1. Get numbers ONLY for the relevant sequence (gwozdz vs standard tree)
+      // 1. Get numbers ONLY for the strictly relevant sequence (gwozdz vs martwe vs zywe)
       List<int> relevantNumbers = widget.powierzchnia.drzewa.where((tree) {
-        bool isTreeGwozdz = tree.typ['state'] == 'zywe' && tree.typ['type'] == 'gwozdz';
-        return isGwozdz ? isTreeGwozdz : !isTreeGwozdz;
+        bool treeIsGwozdz = tree.typ['state'] == 'zywe' && tree.typ['type'] == 'gwozdz';
+        bool treeIsMartwe = tree.typ['state'] == 'martwe';
+        bool treeIsZywe = tree.typ['state'] == 'zywe' && tree.typ['type'] != 'gwozdz';
+
+        if (isGwozdz) return treeIsGwozdz;
+        if (isMartwe) return treeIsMartwe;
+        return treeIsZywe; // Default to standard zywe
       }).map((tree) => tree.numer).toList();
 
       // 2. If editing, remove the tree's original number so it doesn't collide with itself
@@ -203,11 +206,36 @@ class _DrzewoDialogState extends State<DrzewoDialog> {
 
       // 3. Check for duplicates and return a context-aware error message
       if (relevantNumbers.contains(inputtedNumer)) {
-        return isGwozdz ? 'Numer gwoździa już istnieje' : 'Numer drzewa już zdefiniowano';
+        if (isGwozdz) return 'Numer gwoździa już istnieje';
+        if (isMartwe) return 'Numer martwego drzewa już istnieje';
+        return 'Numer żywego drzewa już istnieje';
       }
     }
 
     return null;
+  }
+
+  void _generateNextNumber() {
+    bool isGwozdz = _selectedDrzewoTyp == 'zywe_gwozdz';
+    bool isMartwe = ['posusz', 'wywrot', 'zlom', 'sciete', 'fragment'].contains(_selectedDrzewoTyp);
+
+    // 1. Filter the trees to match the current 3-way numbering sequence
+    var relevantTrees = widget.powierzchnia.drzewa.where((tree) {
+      bool treeIsGwozdz = tree.typ['state'] == 'zywe' && tree.typ['type'] == 'gwozdz';
+      bool treeIsMartwe = tree.typ['state'] == 'martwe';
+      bool treeIsZywe = tree.typ['state'] == 'zywe' && tree.typ['type'] != 'gwozdz';
+
+      if (isGwozdz) return treeIsGwozdz;
+      if (isMartwe) return treeIsMartwe;
+      return treeIsZywe;
+    }).toList();
+
+    // 2. Find the highest number in that specific filtered list
+    int maxNumer = relevantTrees.isNotEmpty
+        ? relevantTrees.map((e) => e.numer).reduce((a, b) => a > b ? a : b)
+        : 0;
+
+    _numerDrzewaController.text = (maxNumer + 1).toString();
   }
 
   String? _checkOdlegloscLimit(String val) {

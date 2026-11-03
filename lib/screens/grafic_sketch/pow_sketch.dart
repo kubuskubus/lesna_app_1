@@ -48,6 +48,7 @@ class PowierzchnieSketch {
   }
 
   /// Extracted method to handle drawing the rotated ellipse and its inner dashed axes with labels
+  /// Extracted method to handle drawing the rotated ellipse and its inner dashed axes with labels
   void _drawEllipseAndAxes({
     required Canvas canvas,
     required double zoom,
@@ -61,7 +62,7 @@ class PowierzchnieSketch {
     required double radiusInclinedMeters,
   }) {
     final ellipseFillPaint = Paint()
-      ..color = Colors.green.withOpacity(0.12)
+      ..color = Colors.white.withOpacity(0.12)
       ..style = PaintingStyle.fill;
 
     final ellipseStrokePaint = Paint()
@@ -81,15 +82,15 @@ class PowierzchnieSketch {
 
     // Helper function to draw dashed lines on the canvas
     void drawDashedLine(Offset p1, Offset p2, Paint paint) {
-      final distance = (p2 - p1).distance; // <-- Fixed operator
+      final distance = (p2 - p1).distance;
       if (distance == 0) return;
-      final direction = (p2 - p1) / distance; // <-- Fixed operator
+      final direction = (p2 - p1) / distance;
       final dashWidth = 6.0 / zoom;
       final dashSpace = 4.0 / zoom;
       double currentDistance = 0.0;
       while (currentDistance < distance) {
-        final start = p1 + direction * currentDistance; // <-- Fixed operator
-        final end = p1 + direction * math.min(currentDistance + dashWidth, distance); // <-- Fixed operator
+        final start = p1 + direction * currentDistance;
+        final end = p1 + direction * math.min(currentDistance + dashWidth, distance);
         canvas.drawLine(start, end, paint);
         currentDistance += dashWidth + dashSpace;
       }
@@ -123,13 +124,16 @@ class PowierzchnieSketch {
       textDirection: TextDirection.ltr,
     )..layout();
 
+    // Calculate X offset to place text at the right edge of the ellipse
+    final double shortXEdgeOffset = radiusPerpendicularCanvas - (shortTextPainter.width / zoom) - (6.0 / zoom);
+
     canvas.save();
     if (slopeAzimuthDeg >= 0 && slopeAzimuthDeg <= 180) {
-      canvas.translate(15.0 / zoom, 2.0 / zoom);
+      canvas.translate(shortXEdgeOffset, 2.0 / zoom);
       canvas.scale(1.0 / zoom);
       shortTextPainter.paint(canvas, Offset.zero);
     } else {
-      canvas.translate(15.0 / zoom, -(shortTextPainter.height / zoom) - (2.0 / zoom));
+      canvas.translate(shortXEdgeOffset, -(shortTextPainter.height / zoom) - (2.0 / zoom));
       canvas.scale(1.0 / zoom);
       shortTextPainter.paint(canvas, Offset.zero);
     }
@@ -158,12 +162,16 @@ class PowierzchnieSketch {
 
     canvas.save();
     if (slopeAzimuthDeg >= 0 && slopeAzimuthDeg <= 180) {
-      canvas.translate(-2.0 / zoom, -15.0 / zoom);
+      // Calculate Y offset to place text at the top edge
+      final double longYTopEdge = -radiusInclinedCanvas + (longTextPainter.width / zoom) + (6.0 / zoom);
+      canvas.translate(-2.0 / zoom, longYTopEdge);
       canvas.rotate(-math.pi / 2);
       canvas.scale(1.0 / zoom);
       longTextPainter.paint(canvas, Offset(0, -longTextPainter.height));
     } else {
-      canvas.translate(2.0 / zoom, 15.0 / zoom);
+      // Calculate Y offset to place text at the bottom edge
+      final double longYBottomEdge = radiusInclinedCanvas - (longTextPainter.width / zoom) - (6.0 / zoom);
+      canvas.translate(2.0 / zoom, longYBottomEdge);
       canvas.rotate(math.pi / 2);
       canvas.scale(1.0 / zoom);
       longTextPainter.paint(canvas, Offset(0, -longTextPainter.height));
@@ -217,17 +225,15 @@ class PowierzchnieSketch {
       crossPaint,
     );
 
-    // 4. Draw overall plot info label on the side
-    final String radiusLabel = powierzchnia.nachylenie != 100 && powierzchnia.maxRadius > 0
-        ? 'R = ${metrics.radiusPerpendicularMeters.toStringAsFixed(2)} / ${metrics.radiusInclinedMeters.toStringAsFixed(2)} m (${metrics.slopeAzimuthDeg == 1000.0 ? '0' : metrics.slopeAzimuthDeg.toStringAsFixed(0)}°)'
-        : 'R = ${realRadius.toStringAsFixed(2)} m';
+    // 4. Draw overall plot info label on the top
+    final String titleLabel = 'KPP ${powierzchnia.numer}';
 
     final kppTextPainter = TextPainter(
       text: TextSpan(
-        text: radiusLabel,
+        text: titleLabel,
         style: TextStyle(
           color: Colors.green.shade900,
-          fontSize: 11.0,
+          fontSize: 20.0,
           fontWeight: FontWeight.bold,
           backgroundColor: Colors.white.withOpacity(0.75),
         ),
@@ -235,13 +241,15 @@ class PowierzchnieSketch {
       textDirection: TextDirection.ltr,
     )..layout();
 
+    // Find the max radius to know where the top edge of the ellipse is
     final double labelOffsetRadius = math.max(metrics.radiusPerpendicularCanvas, metrics.radiusInclinedCanvas);
 
     canvas.save();
-    canvas.translate(
-      metrics.kppCenterCanvas.dx + labelOffsetRadius + (4.0 / zoom),
-      metrics.kppCenterCanvas.dy - (kppTextPainter.height / zoom / 2), // <-- Fixed operator
-    );
+    // Center horizontally and place above the top edge
+    final double targetX = metrics.kppCenterCanvas.dx - (kppTextPainter.width / zoom / 2);
+    final double targetY = metrics.kppCenterCanvas.dy - labelOffsetRadius - (kppTextPainter.height / zoom) - (20.0 / zoom);
+
+    canvas.translate(targetX, targetY);
     canvas.scale(1.0 / zoom);
     kppTextPainter.paint(canvas, Offset.zero);
     canvas.restore();

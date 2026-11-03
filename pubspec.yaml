@@ -10,11 +10,11 @@ version: 1.0.0+1
 environment:
   sdk: ^3.13.2
 
-
 dependencies:
   flutter:
     sdk: flutter
-  path_provider: ^2.1.2 # Check pub.dev for the latest version
+  path_provider: ^2.1.2
+  gal: ^2.3.0
   cupertino_icons: ^1.0.8
 
   # ADD THE LINE BELOW:

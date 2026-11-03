@@ -876,6 +876,13 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
 
   Widget _buildContentArea() {
+    final wyniki = KontrolaPowierzchni.wykonajTestyKontrolne(
+      powierzchnia: widget.powierzchnia,
+      selectedWarstwa: _selectedWarstwa,
+      maxRadius: widget.powierzchnia.maxRadius,
+    );
+    final bool isKontrolaPassing = wyniki.ifPassedControll;
+
     return Expanded(
       child: Column(
         children: [
@@ -884,11 +891,19 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
             labelColor: Colors.deepPurple,
             unselectedLabelColor: Colors.grey,
             indicatorColor: Colors.deepPurple,
-            tabs: const [
-              Tab(text: 'Drz.żyw.'),
-              Tab(text: 'Drz.mart.'),
-              Tab(text: 'Gwoźdz.'), // <-- NEW TAB ADDED HERE
-              Tab(text: 'Kontrol.'),
+            tabs: [
+              const Tab(text: 'Drz.żyw.'),
+              const Tab(text: 'Drz.mart.'),
+              const Tab(text: 'Gwoźdz.'),
+              Tab(
+                child: Text(
+                  'Kontrol.',
+                  style: TextStyle(
+                    color: isKontrolaPassing ? Colors.green : Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -1245,7 +1260,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     DrzewoModel? existingTree,
   }) {
     // --- Check if either nachylenie or azymutNachylenia is unset ---
-    if (widget.powierzchnia.nachylenie == 100 || widget.powierzchnia.azymutNachylenia == 1080.0) {
+    if (widget.powierzchnia.nachylenie == 100) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Brak pełnych danych nachylenia. Uzupełnij nachylenie i azymut przed dodaniem drzewa.'),

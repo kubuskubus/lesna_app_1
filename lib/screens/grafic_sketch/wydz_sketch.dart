@@ -47,7 +47,7 @@ class WydzielenieSketch {
     if (coordList == null) return;
 
     final polyFillPaint = Paint()
-      ..color = Colors.amber.withOpacity(0.18)
+      ..color = Colors.white.withOpacity(0.5)
       ..style = PaintingStyle.fill;
 
     final polyStrokePaint = Paint()

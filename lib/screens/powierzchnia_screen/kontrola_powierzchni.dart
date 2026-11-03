@@ -5,7 +5,11 @@ import 'dart:math' as math;
 
 /// A data class to hold the results of all control tests, divided by category.
 class WynikiKontroli {
-  // --- 1. DRZEWA ŻYWE ---
+  // --- PRESENCE FLAGS ---
+  final bool hasMartwe;
+  final bool hasGwozdzie;
+
+  // --- 1. LIVE TREES ---
   final bool testZyweSrednice;
   final bool testZyweAzymut;
   final bool testZyweOdl;
@@ -13,17 +17,20 @@ class WynikiKontroli {
   final bool testNajgrubsze;
   final Map<String, bool> testyWysokosciZywe;
 
-  // --- 2. DRZEWA MARTWE ---
-  final bool testMartweSrednice;
-  final bool testMartweWysokosc;
+  // --- 2. DEAD TREES ---
+  final bool? testMartweSrednice;
+  final bool? testMartweWysokosc;
 
-  // --- 3. GWOŹDZIE ---
+  // --- 3. NAILS ---
   final bool testGwozdzAzymut;
   final bool testGwozdzOdl;
   final bool testGwozdzPromien;
-  final bool testGwozdzIlosc; // <--- ADDED NEW TEST
+  final bool testGwozdzIlosc;
 
   WynikiKontroli({
+    required this.hasMartwe,
+    required this.hasGwozdzie,
+
     required this.testZyweSrednice,
     required this.testZyweAzymut,
     required this.testZyweOdl,
@@ -37,8 +44,27 @@ class WynikiKontroli {
     required this.testGwozdzAzymut,
     required this.testGwozdzOdl,
     required this.testGwozdzPromien,
-    required this.testGwozdzIlosc, // <--- ADDED TO CONSTRUCTOR
+    required this.testGwozdzIlosc,
   });
+
+  bool get ifPassedControll {
+    final bool wysokosciOk = !testyWysokosciZywe.values.contains(false);
+
+    // Dead trees are optional, so bypassing when 0 is correct
+    final bool martweOk = !hasMartwe || ((testMartweSrednice ?? false) && (testMartweWysokosc ?? false));
+
+    // Nails are strictly required, so do NOT bypass if hasGwozdzie is false
+    final bool gwozdzieOk = testGwozdzAzymut && testGwozdzOdl && testGwozdzPromien && testGwozdzIlosc;
+
+    return testZyweSrednice &&
+        testZyweAzymut &&
+        testZyweOdl &&
+        testZywePromien &&
+        testNajgrubsze &&
+        wysokosciOk &&
+        martweOk &&
+        gwozdzieOk;
+  }
 }
 
 class KontrolaPowierzchni {
@@ -130,6 +156,10 @@ class KontrolaPowierzchni {
     }
 
     return WynikiKontroli(
+      // Corrected to use the actual filtered lists:
+      hasMartwe: martweInLayer.isNotEmpty,
+      hasGwozdzie: gwozdzieInLayer.isNotEmpty,
+
       // Drzewa żywe
       testZyweSrednice: testZyweSrednice,
       testZyweAzymut: testZyweAzymut,
@@ -146,7 +176,7 @@ class KontrolaPowierzchni {
       testGwozdzAzymut: testGwozdzAzymut,
       testGwozdzOdl: testGwozdzOdl,
       testGwozdzPromien: testGwozdzPromien,
-      testGwozdzIlosc: testGwozdzIlosc, // Pass the new test
+      testGwozdzIlosc: testGwozdzIlosc,
     );
   }
 
@@ -203,7 +233,7 @@ class KontrolaPowierzchni {
 
     // --- Validate Martwe ---
     if (isComplete && hasMartwe) {
-      if (!wyniki.testMartweSrednice || !wyniki.testMartweWysokosc) {
+      if (wyniki.testMartweSrednice == false || wyniki.testMartweWysokosc == false) {
         isComplete = false;
       }
     }
@@ -511,20 +541,29 @@ class KontrolaPowierzchni {
 
   static List<Widget> _buildMartweSection(bool hasMartwe, WynikiKontroli wyniki) {
     final List<Widget> rows = [
-      _buildSectionHeader('Drzewa martwe (w tym posusz, wywrot, złom, ścięte, fragment)'),
+      _buildSectionHeader('Drzewa martwe (w tym stojące, wywroty, złomy, ścięte, fragmenty)'),
     ];
 
     if (hasMartwe) {
       rows.addAll([
-        _buildKontrolaRow(nazwaKontroli: 'Wszystkie drzewa martwe mają średnicę', wynik: wyniki.testMartweSrednice),
+        _buildKontrolaRow(
+          nazwaKontroli: 'Wszystkie drzewa martwe mają średnicę',
+          wynik: wyniki.testMartweSrednice ?? false,
+        ),
         const Divider(height: 1, color: Colors.black12),
-        _buildKontrolaRow(nazwaKontroli: 'Wszystkie drzewa martwe mają wysokość', wynik: wyniki.testMartweWysokosc),
+        _buildKontrolaRow(
+          nazwaKontroli: 'Wszystkie drzewa martwe mają wysokość',
+          wynik: wyniki.testMartweWysokosc ?? false,
+        ),
       ]);
     } else {
       rows.add(
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-          child: Text('Brak zdefiniowanych drzew martwych', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+          child: Text(
+            'Brak zdefiniowanych martwych drzew',
+            style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+          ),
         ),
       );
     }

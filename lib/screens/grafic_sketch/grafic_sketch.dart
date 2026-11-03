@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:lesna_app_1/screens/grafic_sketch/pow_sketch.dart';
+import 'package:lesna_app_1/screens/grafic_sketch/sketch_exporter.dart';
 import 'package:lesna_app_1/screens/grafic_sketch/trees_sketch.dart';
 import 'package:lesna_app_1/screens/grafic_sketch/wydz_sketch.dart';
 import 'package:lesna_app_1/screens/powierzchnia_screen/pomiar_wysokosci.dart';
@@ -10,6 +11,7 @@ import '../powierzchnia_screen/drzewo_dialog.dart';
 import '../powierzchnia_screen/powierzchnia_details.dart';
 
 class GraficSketchScreen extends StatefulWidget {
+
   final PowierzchniaModel powierzchnia;
   final WydzielenieModel? wydzData;
   final String typDrzewa;
@@ -36,6 +38,8 @@ class GraficSketchScreen extends StatefulWidget {
 }
 
 class _GraficSketchScreenState extends State<GraficSketchScreen> {
+  // 2. Create the GlobalKey
+  final GlobalKey _sketchKey = GlobalKey();
   final TransformationController _transformController = TransformationController();
   bool _hasInitialZoomBeenSet = false;
   Size? _lastCanvasSize;
@@ -91,6 +95,17 @@ class _GraficSketchScreenState extends State<GraficSketchScreen> {
         centerTitle: true,
         actions: [
           IconButton(
+            icon: const Icon(Icons.download),
+            tooltip: 'Zapisz jako obraz',
+            onPressed: () {
+              SketchExporter.captureAndSave(
+                  _sketchKey,
+                  context,
+                  'KPP_${widget.powierzchnia.numer}_szkic'
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.center_focus_strong),
             tooltip: 'Wyśrodkuj na powierzchnię',
             onPressed: () {
@@ -118,80 +133,87 @@ class _GraficSketchScreenState extends State<GraficSketchScreen> {
             });
           }
 
-          return InteractiveViewer(
-            transformationController: _transformController,
-            boundaryMargin: const EdgeInsets.all(double.infinity),
-            minScale: 0.01,
-            maxScale: 10000.0,
-            child: GestureDetector(
-              onTapUp: (TapUpDetails details) {
-                final tapPosition = details.localPosition;
+          // WRAP THE INTERACTIVE VIEWER IN REPAINTBOUNDARY AND CONTAINER
+          return RepaintBoundary(
+            key: _sketchKey,
+            child: Container(
+              color: Colors.white, // Forces white background on export
+              child: InteractiveViewer(
+                transformationController: _transformController,
+                boundaryMargin: const EdgeInsets.all(double.infinity),
+                minScale: 0.01,
+                maxScale: 10000.0,
+                child: GestureDetector(
+                  onTapUp: (TapUpDetails details) {
+                    final tapPosition = details.localPosition;
 
-                final Offset? tappedGeoCoords = canvasToGlobalCoords(
-                  tapCanvasPosition: tapPosition,
-                  canvasSize: canvasSize,
-                  scale: _plotScale,
-                  centerX: _geoCenterX,
-                  centerY: _geoCenterY,
-                );
+                    final Offset? tappedGeoCoords = canvasToGlobalCoords(
+                      tapCanvasPosition: tapPosition,
+                      canvasSize: canvasSize,
+                      scale: _plotScale,
+                      centerX: _geoCenterX,
+                      centerY: _geoCenterY,
+                    );
 
-                if (tappedGeoCoords != null) {
-                  print('Tapped Geographic Coordinates: X = ${tappedGeoCoords.dx}, Y = ${tappedGeoCoords.dy}');
-                }
-
-                if (_plotCenterCanvas != null && _plotScale != null) {
-                  final currentZoom = _transformController.value.getMaxScaleOnAxis();
-
-                  final tappedTree = TreesSketch.findTappedTree(
-                    tapCanvasPosition: tapPosition,
-                    drzewa: currentTrees, // <-- Uses fresh list
-                    centerCanvas: _plotCenterCanvas!,
-                    meterToCanvasScale: _plotScale!,
-                    zoom: currentZoom,
-                    treeDiameterScaleFactor: 1.0,
-                  );
-
-                  if (tappedTree != null) {
-                    final int globalIndex = widget.powierzchnia.drzewa.indexOf(tappedTree);
-                    if (globalIndex >= 0) {
-                      showDialog(
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (context) {
-                          return DrzewoDialog(
-                            powierzchnia: widget.powierzchnia,
-                            maxRadiusSurface: widget.powierzchnia.maxRadius > 0 ? widget.powierzchnia.maxRadius : 11.28,
-                            initialMode: DialogMode.edit,
-                            initialGlobalIndex: globalIndex,
-                            existingTree: tappedTree,
-                            selectedWarstwa: tappedTree.warstwa.toString(),
-                            initialDynamicGatunki: widget.powierzchnia.gatunki,
-                            onUpdate: () {
-                              setState(() {});
-                              widget.onUpdate?.call();
-                            },
-                          );
-                        },
-                      ).then((_) {
-                        setState(() {});
-                      });
+                    if (tappedGeoCoords != null) {
+                      print('Tapped Geographic Coordinates: X = ${tappedGeoCoords.dx}, Y = ${tappedGeoCoords.dy}');
                     }
-                  }
-                }
-              },
-              child: CustomPaint(
-                size: canvasSize,
-                painter: PlotPainter(
-                  powierzchnia: widget.powierzchnia,
-                  wydzData: widget.wydzData,
-                  drzewa: currentTrees, // <-- Passes fresh list to painter
-                  transformController: _transformController,
-                  onMetricsCalculated: (Offset centerCanvas, double scale, double centerX, double centerY) {
-                    _plotCenterCanvas = centerCanvas;
-                    _plotScale = scale;
-                    _geoCenterX = centerX;
-                    _geoCenterY = centerY;
+
+                    if (_plotCenterCanvas != null && _plotScale != null) {
+                      final currentZoom = _transformController.value.getMaxScaleOnAxis();
+
+                      final tappedTree = TreesSketch.findTappedTree(
+                        tapCanvasPosition: tapPosition,
+                        drzewa: currentTrees,
+                        centerCanvas: _plotCenterCanvas!,
+                        meterToCanvasScale: _plotScale!,
+                        zoom: currentZoom,
+                        treeDiameterScaleFactor: 1.0,
+                      );
+
+                      if (tappedTree != null) {
+                        final int globalIndex = widget.powierzchnia.drzewa.indexOf(tappedTree);
+                        if (globalIndex >= 0) {
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (context) {
+                              return DrzewoDialog(
+                                powierzchnia: widget.powierzchnia,
+                                maxRadiusSurface: widget.powierzchnia.maxRadius > 0 ? widget.powierzchnia.maxRadius : 11.28,
+                                initialMode: DialogMode.edit,
+                                initialGlobalIndex: globalIndex,
+                                existingTree: tappedTree,
+                                selectedWarstwa: tappedTree.warstwa.toString(),
+                                initialDynamicGatunki: widget.powierzchnia.gatunki,
+                                onUpdate: () {
+                                  setState(() {});
+                                  widget.onUpdate?.call();
+                                },
+                              );
+                            },
+                          ).then((_) {
+                            setState(() {});
+                          });
+                        }
+                      }
+                    }
                   },
+                  child: CustomPaint(
+                    size: canvasSize,
+                    painter: PlotPainter(
+                      powierzchnia: widget.powierzchnia,
+                      wydzData: widget.wydzData,
+                      drzewa: currentTrees,
+                      transformController: _transformController,
+                      onMetricsCalculated: (Offset centerCanvas, double scale, double centerX, double centerY) {
+                        _plotCenterCanvas = centerCanvas;
+                        _plotScale = scale;
+                        _geoCenterX = centerX;
+                        _geoCenterY = centerY;
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -307,6 +329,7 @@ class PlotPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.drawColor(Colors.white, BlendMode.srcOver); // <-- ADD THIS LINE
     final double zoom = transformController.value.getMaxScaleOnAxis();
     final geoData = wydzData?.geograficData;
 
