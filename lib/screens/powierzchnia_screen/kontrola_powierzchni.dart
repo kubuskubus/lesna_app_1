@@ -5,11 +5,7 @@ import 'dart:math' as math;
 
 /// A data class to hold the results of all control tests, divided by category.
 class WynikiKontroli {
-  // --- PRESENCE FLAGS ---
-  final bool hasMartwe;
-  final bool hasGwozdzie;
-
-  // --- 1. LIVE TREES ---
+  // --- 1. DRZEWA ŻYWE ---
   final bool testZyweSrednice;
   final bool testZyweAzymut;
   final bool testZyweOdl;
@@ -17,20 +13,17 @@ class WynikiKontroli {
   final bool testNajgrubsze;
   final Map<String, bool> testyWysokosciZywe;
 
-  // --- 2. DEAD TREES ---
-  final bool? testMartweSrednice;
-  final bool? testMartweWysokosc;
+  // --- 2. DRZEWA MARTWE ---
+  final bool testMartweSrednice;
+  final bool testMartweWysokosc;
 
-  // --- 3. NAILS ---
+  // --- 3. GWOŹDZIE ---
   final bool testGwozdzAzymut;
   final bool testGwozdzOdl;
   final bool testGwozdzPromien;
-  final bool testGwozdzIlosc;
+  final bool testGwozdzIlosc; // <--- ADDED NEW TEST
 
   WynikiKontroli({
-    required this.hasMartwe,
-    required this.hasGwozdzie,
-
     required this.testZyweSrednice,
     required this.testZyweAzymut,
     required this.testZyweOdl,
@@ -44,27 +37,8 @@ class WynikiKontroli {
     required this.testGwozdzAzymut,
     required this.testGwozdzOdl,
     required this.testGwozdzPromien,
-    required this.testGwozdzIlosc,
+    required this.testGwozdzIlosc, // <--- ADDED TO CONSTRUCTOR
   });
-
-  bool get ifPassedControll {
-    final bool wysokosciOk = !testyWysokosciZywe.values.contains(false);
-
-    // Dead trees are optional, so bypassing when 0 is correct
-    final bool martweOk = !hasMartwe || ((testMartweSrednice ?? false) && (testMartweWysokosc ?? false));
-
-    // Nails are strictly required, so do NOT bypass if hasGwozdzie is false
-    final bool gwozdzieOk = testGwozdzAzymut && testGwozdzOdl && testGwozdzPromien && testGwozdzIlosc;
-
-    return testZyweSrednice &&
-        testZyweAzymut &&
-        testZyweOdl &&
-        testZywePromien &&
-        testNajgrubsze &&
-        wysokosciOk &&
-        martweOk &&
-        gwozdzieOk;
-  }
 }
 
 class KontrolaPowierzchni {
@@ -76,15 +50,12 @@ class KontrolaPowierzchni {
   }) {
     final List<DrzewoModel> allTrees = powierzchnia.drzewa;
 
-    // // --- 1. Filter all items for the selected layer ---
-    // final List<DrzewoModel> allItemsInLayer = allTrees.where((tree) {
-    //   return selectedWarstwa == 'Wszyst.' ||
-    //       tree.warstwa.toString() == selectedWarstwa ||
-    //       tree.warstwa.toString().isEmpty;
-    // }).toList();
-
-    // --- 1. Use all items for the entire surface (ignoring layer selection) ---
-    final List<DrzewoModel> allItemsInLayer = allTrees;
+    // --- 1. Filter all items for the selected layer ---
+    final List<DrzewoModel> allItemsInLayer = allTrees.where((tree) {
+      return selectedWarstwa == 'Wszyst.' ||
+          tree.warstwa.toString() == selectedWarstwa ||
+          tree.warstwa.toString().isEmpty;
+    }).toList();
 
     // =========================================================================
     // 2. SEPARATION INTO 3 DISTINCT GROUPS
@@ -156,10 +127,6 @@ class KontrolaPowierzchni {
     }
 
     return WynikiKontroli(
-      // Corrected to use the actual filtered lists:
-      hasMartwe: martweInLayer.isNotEmpty,
-      hasGwozdzie: gwozdzieInLayer.isNotEmpty,
-
       // Drzewa żywe
       testZyweSrednice: testZyweSrednice,
       testZyweAzymut: testZyweAzymut,
@@ -176,7 +143,7 @@ class KontrolaPowierzchni {
       testGwozdzAzymut: testGwozdzAzymut,
       testGwozdzOdl: testGwozdzOdl,
       testGwozdzPromien: testGwozdzPromien,
-      testGwozdzIlosc: testGwozdzIlosc,
+      testGwozdzIlosc: testGwozdzIlosc, // Pass the new test
     );
   }
 
@@ -233,7 +200,7 @@ class KontrolaPowierzchni {
 
     // --- Validate Martwe ---
     if (isComplete && hasMartwe) {
-      if (wyniki.testMartweSrednice == false || wyniki.testMartweWysokosc == false) {
+      if (!wyniki.testMartweSrednice || !wyniki.testMartweWysokosc) {
         isComplete = false;
       }
     }
@@ -541,29 +508,20 @@ class KontrolaPowierzchni {
 
   static List<Widget> _buildMartweSection(bool hasMartwe, WynikiKontroli wyniki) {
     final List<Widget> rows = [
-      _buildSectionHeader('Drzewa martwe (w tym stojące, wywroty, złomy, ścięte, fragmenty)'),
+      _buildSectionHeader('Drzewa martwe (w tym posusz, wywrot, złom, ścięte, fragment)'),
     ];
 
     if (hasMartwe) {
       rows.addAll([
-        _buildKontrolaRow(
-          nazwaKontroli: 'Wszystkie drzewa martwe mają średnicę',
-          wynik: wyniki.testMartweSrednice ?? false,
-        ),
+        _buildKontrolaRow(nazwaKontroli: 'Wszystkie drzewa martwe mają średnicę', wynik: wyniki.testMartweSrednice),
         const Divider(height: 1, color: Colors.black12),
-        _buildKontrolaRow(
-          nazwaKontroli: 'Wszystkie drzewa martwe mają wysokość',
-          wynik: wyniki.testMartweWysokosc ?? false,
-        ),
+        _buildKontrolaRow(nazwaKontroli: 'Wszystkie drzewa martwe mają wysokość', wynik: wyniki.testMartweWysokosc),
       ]);
     } else {
       rows.add(
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-          child: Text(
-            'Brak zdefiniowanych martwych drzew',
-            style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
-          ),
+          child: Text('Brak zdefiniowanych drzew martwych', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
         ),
       );
     }

@@ -6,7 +6,6 @@ import 'package:lesna_app_1/screens/powierzchnia_screen/powierzchnia_model.dart'
 class PowierzchnieSketch {
   final PowierzchniaModel powierzchnia;
   final WydzielenieModel? wydzData;
-  final List<DrzewoModel> drzewa; // <-- Added the list of trees to the class
 
   static const double realRadius = 11.28;
   static const double treeDiameterScaleFactor = 1.0;
@@ -14,7 +13,6 @@ class PowierzchnieSketch {
   const PowierzchnieSketch({
     required this.powierzchnia,
     this.wydzData,
-    required this.drzewa, // <-- Added to the constructor
   });
 
   /// Extracts (x, y) of center_KPP from geograficData if available
@@ -39,15 +37,15 @@ class PowierzchnieSketch {
     final kpp = centerKppCoords;
     if (kpp != null) {
       final double slopeDegrees = (powierzchnia.nachylenie).toDouble().clamp(0.0, 85.0);
-      final double slopeRad = slopeDegrees * (math.pi / 180.0); // <-- Fixed operator
+      final double slopeRad = slopeDegrees * (math.pi / 180.0);
       final double maxRadius = realRadius / math.cos(slopeRad);
 
-      onPoint(kpp.x - maxRadius, kpp.y - maxRadius); // <-- Fixed operators
+      onPoint(kpp.x - maxRadius, kpp.y - maxRadius);
       onPoint(kpp.x + maxRadius, kpp.y + maxRadius);
     }
   }
 
-  /// Extracted method to handle drawing the rotated ellipse and its inner dashed axes with labels
+  /// Draws the KPP ellipse rotated by slope azimuth, dashed axis lines with adjacent value labels, center red cross, and all trees
   /// Extracted method to handle drawing the rotated ellipse and its inner dashed axes with labels
   void _drawEllipseAndAxes({
     required Canvas canvas,
@@ -62,7 +60,7 @@ class PowierzchnieSketch {
     required double radiusInclinedMeters,
   }) {
     final ellipseFillPaint = Paint()
-      ..color = Colors.white.withOpacity(0.12)
+      ..color = Colors.green.withOpacity(0.12)
       ..style = PaintingStyle.fill;
 
     final ellipseStrokePaint = Paint()
@@ -124,16 +122,13 @@ class PowierzchnieSketch {
       textDirection: TextDirection.ltr,
     )..layout();
 
-    // Calculate X offset to place text at the right edge of the ellipse
-    final double shortXEdgeOffset = radiusPerpendicularCanvas - (shortTextPainter.width / zoom) - (6.0 / zoom);
-
     canvas.save();
     if (slopeAzimuthDeg >= 0 && slopeAzimuthDeg <= 180) {
-      canvas.translate(shortXEdgeOffset, 2.0 / zoom);
+      canvas.translate(15.0 / zoom, 2.0 / zoom);
       canvas.scale(1.0 / zoom);
       shortTextPainter.paint(canvas, Offset.zero);
     } else {
-      canvas.translate(shortXEdgeOffset, -(shortTextPainter.height / zoom) - (2.0 / zoom));
+      canvas.translate(15.0 / zoom, -(shortTextPainter.height / zoom) - (2.0 / zoom));
       canvas.scale(1.0 / zoom);
       shortTextPainter.paint(canvas, Offset.zero);
     }
@@ -162,16 +157,12 @@ class PowierzchnieSketch {
 
     canvas.save();
     if (slopeAzimuthDeg >= 0 && slopeAzimuthDeg <= 180) {
-      // Calculate Y offset to place text at the top edge
-      final double longYTopEdge = -radiusInclinedCanvas + (longTextPainter.width / zoom) + (6.0 / zoom);
-      canvas.translate(-2.0 / zoom, longYTopEdge);
+      canvas.translate(-2.0 / zoom, -15.0 / zoom);
       canvas.rotate(-math.pi / 2);
       canvas.scale(1.0 / zoom);
       longTextPainter.paint(canvas, Offset(0, -longTextPainter.height));
     } else {
-      // Calculate Y offset to place text at the bottom edge
-      final double longYBottomEdge = radiusInclinedCanvas - (longTextPainter.width / zoom) - (6.0 / zoom);
-      canvas.translate(2.0 / zoom, longYBottomEdge);
+      canvas.translate(2.0 / zoom, 15.0 / zoom);
       canvas.rotate(math.pi / 2);
       canvas.scale(1.0 / zoom);
       longTextPainter.paint(canvas, Offset(0, -longTextPainter.height));
@@ -215,25 +206,27 @@ class PowierzchnieSketch {
 
     final double crossSize = 6.0 / zoom;
     canvas.drawLine(
-      Offset(metrics.kppCenterCanvas.dx - crossSize, metrics.kppCenterCanvas.dy), // <-- Fixed operator
+      Offset(metrics.kppCenterCanvas.dx - crossSize, metrics.kppCenterCanvas.dy),
       Offset(metrics.kppCenterCanvas.dx + crossSize, metrics.kppCenterCanvas.dy),
       crossPaint,
     );
     canvas.drawLine(
-      Offset(metrics.kppCenterCanvas.dx, metrics.kppCenterCanvas.dy - crossSize), // <-- Fixed operator
+      Offset(metrics.kppCenterCanvas.dx, metrics.kppCenterCanvas.dy - crossSize),
       Offset(metrics.kppCenterCanvas.dx, metrics.kppCenterCanvas.dy + crossSize),
       crossPaint,
     );
 
-    // 4. Draw overall plot info label on the top
-    final String titleLabel = 'KPP ${powierzchnia.numer}';
+    // 4. Draw overall plot info label on the side
+    final String radiusLabel = powierzchnia.nachylenie != 100 && powierzchnia.maxRadius > 0
+        ? 'R = ${metrics.radiusPerpendicularMeters.toStringAsFixed(2)} / ${metrics.radiusInclinedMeters.toStringAsFixed(2)} m (${metrics.slopeAzimuthDeg == 1000.0 ? '0' : metrics.slopeAzimuthDeg.toStringAsFixed(0)}°)'
+        : 'R = ${realRadius.toStringAsFixed(2)} m';
 
     final kppTextPainter = TextPainter(
       text: TextSpan(
-        text: titleLabel,
+        text: radiusLabel,
         style: TextStyle(
           color: Colors.green.shade900,
-          fontSize: 20.0,
+          fontSize: 11.0,
           fontWeight: FontWeight.bold,
           backgroundColor: Colors.white.withOpacity(0.75),
         ),
@@ -241,23 +234,21 @@ class PowierzchnieSketch {
       textDirection: TextDirection.ltr,
     )..layout();
 
-    // Find the max radius to know where the top edge of the ellipse is
     final double labelOffsetRadius = math.max(metrics.radiusPerpendicularCanvas, metrics.radiusInclinedCanvas);
 
     canvas.save();
-    // Center horizontally and place above the top edge
-    final double targetX = metrics.kppCenterCanvas.dx - (kppTextPainter.width / zoom / 2);
-    final double targetY = metrics.kppCenterCanvas.dy - labelOffsetRadius - (kppTextPainter.height / zoom) - (20.0 / zoom);
-
-    canvas.translate(targetX, targetY);
+    canvas.translate(
+      metrics.kppCenterCanvas.dx + labelOffsetRadius + (4.0 / zoom),
+      metrics.kppCenterCanvas.dy - (kppTextPainter.height / zoom / 2),
+    );
     canvas.scale(1.0 / zoom);
     kppTextPainter.paint(canvas, Offset.zero);
     canvas.restore();
 
-    // 5. Draw trees inside/around the plot using the dedicated TreesSketch class
+    // 5. Draw trees inside/around the plot
     TreesSketch.drawTrees(
       canvas: canvas,
-      drzewa: drzewa, // <-- Changed 'powierzchnia' to the 'drzewa' list
+      powierzchnia: powierzchnia,
       centerCanvas: metrics.kppCenterCanvas,
       meterToCanvasScale: scale,
       zoom: zoom,
@@ -286,7 +277,7 @@ class PowierzchnieSketch {
 
     // 1. Get slope azimuth (azymut nachylenia) in degrees and convert to radians
     final double slopeAzimuthDeg = (powierzchnia.azymutNachylenia).toDouble();
-    final double slopeAzimuthRad = slopeAzimuthDeg * (math.pi / 180.0); // <-- Fixed operator
+    final double slopeAzimuthRad = slopeAzimuthDeg * (math.pi / 180.0);
 
     // 2. Radii in meters:
     // Short radius (perpendicular) is fixed at realRadius (11.28 m)
@@ -296,14 +287,14 @@ class PowierzchnieSketch {
     powierzchnia.maxRadius > 0 ? powierzchnia.maxRadius : realRadius;
 
     // 3. Convert radii to canvas units
-    final double radiusPerpendicularCanvas = radiusPerpendicularMeters * scale; // <-- Fixed operator
-    final double radiusInclinedCanvas = radiusInclinedMeters * scale; // <-- Fixed operator
+    final double radiusPerpendicularCanvas = radiusPerpendicularMeters * scale;
+    final double radiusInclinedCanvas = radiusInclinedMeters * scale;
 
     // 4. Create the bounding rectangle for the ellipse (centered at 0,0 for rotated canvas)
     final Rect localEllipseRect = Rect.fromCenter(
       center: Offset.zero,
-      width: radiusPerpendicularCanvas * 2, // <-- Fixed operator
-      height: radiusInclinedCanvas * 2, // <-- Fixed operator
+      width: radiusPerpendicularCanvas * 2,
+      height: radiusInclinedCanvas * 2,
     );
 
     return (
@@ -317,6 +308,9 @@ class PowierzchnieSketch {
     localEllipseRect: localEllipseRect,
     );
   }
+
+
+
 
   /// Draws fallback plot and trees when geograficData is missing
   void drawFallback({
@@ -342,23 +336,125 @@ class PowierzchnieSketch {
 
     final double crossSize = 12.0 / zoom;
     canvas.drawLine(
-      Offset(center.dx - crossSize, center.dy), // <-- Fixed operator
+      Offset(center.dx - crossSize, center.dy),
       Offset(center.dx + crossSize, center.dy),
       crossPaint,
     );
     canvas.drawLine(
-      Offset(center.dx, center.dy - crossSize), // <-- Fixed operator
+      Offset(center.dx, center.dy - crossSize),
       Offset(center.dx, center.dy + crossSize),
       crossPaint,
     );
 
     TreesSketch.drawTrees(
       canvas: canvas,
-      drzewa: drzewa, // <-- Correctly uses the passed list
+      powierzchnia: powierzchnia,
       centerCanvas: center,
       meterToCanvasScale: meterToCanvasScale,
       zoom: zoom,
       treeDiameterScaleFactor: treeDiameterScaleFactor,
     );
+  }
+
+  /// Draws all trees from powierzchnia.drzewa using radial coordinates (odl, azymut)
+  void drawTrees({
+    required Canvas canvas,
+    required Offset centerCanvas,
+    required double meterToCanvasScale,
+    required double zoom,
+  }) {
+    final drzewa = powierzchnia.drzewa;
+    if (drzewa.isEmpty) return;
+
+    for (final drzewo in drzewa) {
+      if (drzewo.azymut == null) continue;
+
+      final double azymutRad = drzewo.azymut! * (math.pi / 180.0);
+
+      final double dxMeters = drzewo.odl * math.sin(azymutRad);
+      final double dyMeters = drzewo.odl * math.cos(azymutRad);
+
+      final Offset treeCanvasPos = Offset(
+        centerCanvas.dx + (dxMeters * meterToCanvasScale),
+        centerCanvas.dy - (dyMeters * meterToCanvasScale),
+      );
+
+      final double treeRadiusMeters =
+          (drzewo.srednica / 200.0) * treeDiameterScaleFactor;
+      final double rawRadiusCanvas = treeRadiusMeters * meterToCanvasScale;
+
+      final double treeRadiusCanvas = math.max(rawRadiusCanvas, 2.5 / zoom);
+
+      final style = _getTreeStyle(drzewo);
+
+      final fillPaint = Paint()
+        ..color = style.fill
+        ..style = PaintingStyle.fill;
+
+      final borderPaint = Paint()
+        ..color = style.border
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2 / zoom;
+
+      canvas.drawCircle(treeCanvasPos, treeRadiusCanvas, fillPaint);
+      canvas.drawCircle(treeCanvasPos, treeRadiusCanvas, borderPaint);
+
+      final String label = '${style.prefix}${drzewo.numer}';
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(
+            color: style.text,
+            fontSize: 10.0 / zoom,
+            fontWeight: FontWeight.bold,
+            backgroundColor: Colors.white.withOpacity(0.75),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      textPainter.paint(
+        canvas,
+        Offset(
+          treeCanvasPos.dx + treeRadiusCanvas + (2.0 / zoom),
+          treeCanvasPos.dy - (textPainter.height / 2),
+        ),
+      );
+    }
+  }
+
+  /// Helper to classify tree into ('Z', 'M', or 'G') and assign distinct colors
+  ({String prefix, Color fill, Color border, Color text}) _getTreeStyle(
+      DrzewoModel drzewo) {
+    final stateStr = (drzewo.typ['state'] ?? '').toLowerCase().trim();
+    final typeStr = (drzewo.typ['type'] ?? '').toLowerCase().trim();
+    final combined = '$stateStr $typeStr';
+
+    if (combined.contains('gwozdz') || combined.contains('gwóźdź')) {
+      return (
+      prefix: 'G',
+      fill: Colors.blue.shade400.withOpacity(0.85),
+      border: Colors.blue.shade900,
+      text: Colors.blue.shade900,
+      );
+    } else if (combined.contains('martw') ||
+        combined.contains('posusz') ||
+        combined.contains('zlom') ||
+        combined.contains('złom') ||
+        combined.contains('wywrot')) {
+      return (
+      prefix: 'M',
+      fill: Colors.deepOrange.shade400.withOpacity(0.85),
+      border: Colors.brown.shade900,
+      text: Colors.deepOrange.shade900,
+      );
+    } else {
+      return (
+      prefix: 'Z',
+      fill: Colors.lightGreen.shade600.withOpacity(0.85),
+      border: Colors.green.shade900,
+      text: Colors.green.shade900,
+      );
+    }
   }
 }

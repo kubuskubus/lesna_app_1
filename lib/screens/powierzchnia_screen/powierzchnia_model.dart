@@ -24,7 +24,7 @@ class PowierzchniaModel {
   })  : adres = adres ?? [],
         warstwa = warstwa ?? [],
         nachylenie = nachylenie ?? 100,
-        azymutNachylenia = azymutNachylenia ?? 1080.0,
+        azymutNachylenia = azymutNachylenia ?? 1000.0,
         maxRadius = maxRadius ?? 0.0, // <-- Default to 0.0 if null
         drzewa = drzewa ?? [],
         gatunki = gatunki ?? [],
@@ -70,7 +70,7 @@ class PowierzchniaModel {
     int parsedNachylenie = int.tryParse(json['nachylenie']?.toString() ?? '100') ?? 100;
 
     // Safely parse 'azymutNachylenia', defaulting to 1000.0 if missing or invalid
-    double parsedAzymutNachylenia = double.tryParse(json['azymutNachylenia']?.toString() ?? '1080.0') ?? 1080.0;
+    double parsedAzymutNachylenia = double.tryParse(json['azymutNachylenia']?.toString() ?? '1000.0') ?? 1000.0;
 
     // Safely parse 'maxRadius', defaulting to 0.0 if missing or invalid
     double parsedMaxRadius = double.tryParse(json['maxRadius']?.toString() ?? '0.0') ?? 0.0;

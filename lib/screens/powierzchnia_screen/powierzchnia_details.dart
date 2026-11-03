@@ -40,6 +40,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   final List<String> _logs = [];
   bool _isMeasurementModeActive = false;
   int _currentMeasurementIndex = -1;
+  double _maxRadiusSurface = 11.28; // Default value for 0 degrees
 
   // Sorting table
   int? _sortColumnIndex;
@@ -85,9 +86,6 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
   // Add this variable
   late TabController _tabController;
-
-  // Stores the filtered trees for each tab category
-  final Map<String, List<DrzewoModel>> _tabTreesCache = {};
 
   String _selectedWarstwa = '1'; // Default value as a string
 
@@ -211,26 +209,12 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                         builder: (context) => GraficSketchScreen(
                           powierzchnia: widget.powierzchnia,
                           wydzData: widget.wydzData,
-                          typDrzewa: 'zywe', // Base type (nails are auto-appended inside GraficSketchScreen)
-                          selectedWarstwa: _selectedWarstwa,
-                          isWysokoscPomiarActive: _isWysokoscPomiarActive,
-                          defaultGatunekWysokosc: _defaultGatunekWysokosc,
-                          defaultWiekWysokosc: _defaultWiekWysokosc,
-                          onUpdate: () {
-                            setState(() {
-                              KontrolaPowierzchni.updateSingleSurfaceCompletion(widget.powierzchnia);
-                            });
-                            widget.onUpdate();
-                          },
                         ),
                       ),
-                    ).then((_) {
-                      // Refresh the table when returning from the sketch screen
-                      setState(() {});
-                    });
+                    );
                   },
                   icon: const Icon(Icons.draw),
-                  label: const Text('Szkic Graficzny'),
+                  label: const Text('Szkic Graficzny (11.28 m)'),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
@@ -519,42 +503,6 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     );
   }
 
-  void _confirmDeleteTree(int globalIndex, int numerDrzewa) {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // Prevents closing by tapping outside
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Potwierdzenie'),
-          content: Text('Czy na pewno usunąć drzewo nr $numerDrzewa?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('NIE'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade400,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                Navigator.of(context).pop(); // Close the dialog
-
-                // Execute the deletion
-                setState(() {
-                  widget.powierzchnia.drzewa.removeAt(globalIndex);
-                  KontrolaPowierzchni.updateSingleSurfaceCompletion(widget.powierzchnia);
-                });
-                widget.onUpdate();
-              },
-              child: const Text('TAK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
 // --- ADD THIS METHOD ANYWHERE IN YOUR STATE CLASS ---
   void _showPowierzchniaNoteDialog() {
     final TextEditingController noteController =
@@ -562,7 +510,6 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
     showDialog(
       context: context,
-      barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
           title: const Text('Notatka do powierzchni'),
@@ -601,14 +548,13 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
       text: widget.powierzchnia.nachylenie == 100 ? '' : widget.powierzchnia.nachylenie.toString(),
     );
     final TextEditingController azymutController = TextEditingController(
-      text: widget.powierzchnia.azymutNachylenia == 1080.0
+      text: widget.powierzchnia.azymutNachylenia == 1000.0
           ? ''
           : widget.powierzchnia.azymutNachylenia.toStringAsFixed(0),
     );
 
     showDialog(
       context: context,
-      barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -876,13 +822,6 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
 
   Widget _buildContentArea() {
-    final wyniki = KontrolaPowierzchni.wykonajTestyKontrolne(
-      powierzchnia: widget.powierzchnia,
-      selectedWarstwa: _selectedWarstwa,
-      maxRadius: widget.powierzchnia.maxRadius,
-    );
-    final bool isKontrolaPassing = wyniki.ifPassedControll;
-
     return Expanded(
       child: Column(
         children: [
@@ -891,19 +830,11 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
             labelColor: Colors.deepPurple,
             unselectedLabelColor: Colors.grey,
             indicatorColor: Colors.deepPurple,
-            tabs: [
-              const Tab(text: 'Drz.żyw.'),
-              const Tab(text: 'Drz.mart.'),
-              const Tab(text: 'Gwoźdz.'),
-              Tab(
-                child: Text(
-                  'Kontrol.',
-                  style: TextStyle(
-                    color: isKontrolaPassing ? Colors.green : Colors.red,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+            tabs: const [
+              Tab(text: 'Drz.żyw.'),
+              Tab(text: 'Drz.mart.'),
+              Tab(text: 'Gwoźdz.'), // <-- NEW TAB ADDED HERE
+              Tab(text: 'Kontrol.'),
             ],
           ),
           const SizedBox(height: 8),
@@ -931,7 +862,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                   child: KontrolaPowierzchni.buildKontrolaTable(
                     powierzchnia: widget.powierzchnia,
                     selectedWarstwa: _selectedWarstwa,
-                    maxRadius: widget.powierzchnia.maxRadius,
+                    maxRadius: _maxRadiusSurface,
                   ),
                 ),
               ],
@@ -953,18 +884,6 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
   }
 
   // 1. Unify the widget to accept a list of trees
-  Widget _buildTreeListView(String typDrzewa, List<DrzewoModel> finalTrees) {
-    return ListView(
-      // Increased bottom padding to 100.0 so the last row is always visible when scrolled to the bottom
-      padding: const EdgeInsets.only(top: 8.0, bottom: 100.0),
-      children: [
-        typDrzewa == 'gwozdz'
-            ? _buildGwozdzieTable(finalTrees)
-            : _buildDrzewaTable(finalTrees),
-      ],
-    );
-  }
-
   Widget _buildTreeTabContent(String typDrzewa) {
     final pomiarManager = PomiarWysokosci(powierzchnia: widget.powierzchnia);
 
@@ -976,9 +895,6 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
       defaultGatunekWysokosc: _defaultGatunekWysokosc,
       defaultWiekWysokosc: _defaultWiekWysokosc,
     );
-
-    // --- ADDED HERE: Store the trees in the class variable ---
-    _storeFinalTrees(typDrzewa, finalTrees);
 
     if (finalTrees.isEmpty) {
       String emptyMessage;
@@ -992,21 +908,16 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
       return _buildEmptyState(emptyMessage);
     }
 
-    return _buildTreeListView(typDrzewa, finalTrees);
-  }
-
-  /// Stores the calculated trees for a specific tab category without triggering a rebuild
-  void _storeFinalTrees(String typDrzewa, List<DrzewoModel> trees) {
-    _tabTreesCache[typDrzewa] = trees;
-  }
-
-  /// Returns a combined list of currently filtered 'zywe' trees and all 'gwozdzie'
-  List<DrzewoModel> get _treesForSketch {
-    final List<DrzewoModel> zywe = _tabTreesCache['zywe'] ?? [];
-    final List<DrzewoModel> gwozdzie = _tabTreesCache['gwozdz'] ?? [];
-
-    // Combine both lists using the spread operator
-    return [...zywe, ...gwozdzie];
+    return ListView(
+      // Increased bottom padding to 100.0 so the last row is always visible when scrolled to the bottom
+      padding: const EdgeInsets.only(top: 8.0, bottom: 100.0),
+      children: [
+        // --- UPDATED: Call the correct table widget based on typDrzewa ---
+        typDrzewa == 'gwozdz'
+            ? _buildGwozdzieTable(finalTrees)
+            : _buildDrzewaTable(finalTrees),
+      ],
+    );
   }
 
 
@@ -1144,7 +1055,16 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                       icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
                       onPressed: () {
                         if (globalIndex >= 0) {
-                          _confirmDeleteTree(globalIndex, drzewo.numer);
+                          setState(() {
+                            // 1. Remove the tree
+                            widget.powierzchnia.drzewa.removeAt(globalIndex);
+
+                            // 2. NEW: Recalculate completion status since the tree list changed
+                            KontrolaPowierzchni.updateSingleSurfaceCompletion(widget.powierzchnia);
+                          });
+
+                          // 3. Save the updated surface (and its new status) to memory
+                          widget.onUpdate();
                         }
                       },
                     ),
@@ -1240,7 +1160,10 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
                       icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
                       onPressed: () {
                         if (globalIndex >= 0) {
-                          _confirmDeleteTree(globalIndex, drzewo.numer);
+                          setState(() {
+                            widget.powierzchnia.drzewa.removeAt(globalIndex);
+                          });
+                          widget.onUpdate();
                         }
                       },
                     ),
@@ -1260,7 +1183,7 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
     DrzewoModel? existingTree,
   }) {
     // --- Check if either nachylenie or azymutNachylenia is unset ---
-    if (widget.powierzchnia.nachylenie == 100) {
+    if (widget.powierzchnia.nachylenie == 100 || widget.powierzchnia.azymutNachylenia == 1000.0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Brak pełnych danych nachylenia. Uzupełnij nachylenie i azymut przed dodaniem drzewa.'),
@@ -1287,11 +1210,11 @@ class _PowierzchniaDetailScreenState extends State<PowierzchniaDetailScreen> wit
 
     showDialog(
       context: context,
-      barrierDismissible: false, // <-- CHANGE THIS LINE (was: mode != DialogMode.addBatch)
+      barrierDismissible: mode != DialogMode.addBatch,
       builder: (context) {
         return DrzewoDialog(
           powierzchnia: widget.powierzchnia,
-          maxRadiusSurface: widget.powierzchnia.maxRadius, // Pass it here
+          maxRadiusSurface: _maxRadiusSurface, // Pass it here
           initialMode: mode,
           initialGlobalIndex: globalIndex,
           existingTree: existingTree,
